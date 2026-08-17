@@ -229,7 +229,10 @@ struct LoggedEventIndex: Sendable {
         storage[Key(medicationID: medicationID, minute: Self.minuteKey(scheduledAt))]
     }
 
-    private static func minuteKey(_ date: Date) -> Int {
+    /// Minutes since the reference date, rounded — the one key both the read
+    /// path (this index) and the write path (`DoseStore.existingEvent`) match
+    /// on, so they can never disagree about which dose a log belongs to.
+    static func minuteKey(_ date: Date) -> Int {
         Int((date.timeIntervalSinceReferenceDate / 60).rounded())
     }
 }

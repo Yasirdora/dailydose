@@ -150,17 +150,22 @@ final class DoseStore {
     }
 
     private func existingEvent(medicationID: String, scheduledAt: Date) -> DoseEvent? {
-        // Matched on a ±60s window so a log written a moment off the scheduled
-        // instant still resolves to the same dose.
-        let lower = scheduledAt.addingTimeInterval(-60)
-        let upper = scheduledAt.addingTimeInterval(60)
+        // Fetch a generous window, then match on the same rounded-minute key
+        // `LoggedEventIndex` reads with. The old ±60s *inclusive* range would
+        // resolve an 08:01 log to the 08:00 dose — two scheduled times a
+        // minute apart overwriting each other, read and write disagreeing
+        // about which dose a log belonged to.
+        let lower = scheduledAt.addingTimeInterval(-90)
+        let upper = scheduledAt.addingTimeInterval(90)
         var descriptor = FetchDescriptor<DoseEvent>(
             predicate: #Predicate {
-                $0.medicationID == medicationID && $0.scheduledAt >= lower && $0.scheduledAt <= upper
+                $0.medicationID == medicationID && $0.scheduledAt >= lower && $0.scheduledAt < upper
             }
         )
-        descriptor.fetchLimit = 1
-        return try? context.fetch(descriptor).first
+        descriptor.fetchLimit = 4
+        let key = LoggedEventIndex.minuteKey(scheduledAt)
+        return (try? context.fetch(descriptor))?
+            .first { LoggedEventIndex.minuteKey($0.scheduledAt) == key }
     }
 
     // MARK: - Missed-dose sweep

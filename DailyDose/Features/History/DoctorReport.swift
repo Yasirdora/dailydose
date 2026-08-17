@@ -153,7 +153,9 @@ private struct OverviewPage: View {
     private var periodText: String {
         let start = data.periodStart.formatted(.dateTime.day().month(.abbreviated))
         let end = data.generatedAt.formatted(.dateTime.day().month(.abbreviated).year())
-        return "\(start) – \(end)"
+        // One localized string, not two dates around a bare en-dash — raw
+        // concatenation renders in reversed order in RTL languages.
+        return String(localized: "\(start) – \(end)")
     }
 
     var body: some View {
@@ -221,7 +223,9 @@ private struct OverviewPage: View {
                 Text(String(localized: "\(data.overall.taken) taken · \(data.overall.skipped) skipped · \(data.overall.missed) missed"))
                     .font(.system(size: 12))
                     .foregroundStyle(Color.gray)
-                Text(String(localized: "of \(data.overall.total) scheduled doses"))
+                Text(data.overall.total == 1
+                     ? String(localized: "of 1 scheduled dose")
+                     : String(localized: "of \(data.overall.total) scheduled doses"))
                     .font(.system(size: 12))
                     .foregroundStyle(Color.gray)
             }
@@ -447,7 +451,11 @@ private struct ReportFooter: View {
         VStack(spacing: 8) {
             Divider().opacity(0.4)
             HStack {
-                Text(String(localized: "Recorded by the patient in Daily Dose. Times are as logged, including early and late doses."))
+                // Two sentences every page must carry: where the numbers came
+                // from, and what the page is not. An A4 sheet titled
+                // "Medication Adherence Report" reads as a clinical instrument;
+                // it is a personal record and says so.
+                Text(String(localized: "Recorded by the patient in Daily Dose — a personal record, not a medical document. Times are as logged, including early and late doses."))
                     .font(.system(size: 9))
                     .foregroundStyle(Color.gray)
                 Spacer()

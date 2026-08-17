@@ -18,6 +18,9 @@ struct HistoryView: View {
     @State private var period: Period = .week
     @State private var data = HistoryData()
     @State private var exportedSummary: ExportedSummary?
+    /// One export at a time: two taps used to render two PDFs onto the same
+    /// URL, the second overwriting a file an in-flight share still held.
+    @State private var isExporting = false
 
     /// Wraps the file URL so `.sheet(item:)` can drive the share sheet.
     private struct ExportedSummary: Identifiable {
@@ -73,7 +76,7 @@ struct HistoryView: View {
                         systemImage: "square.and.arrow.up",
                         label: String(localized: "Share doctor report")
                     ) { exportSummary() }
-                    .disabled(data.summary.total == 0)
+                    .disabled(data.summary.total == 0 || isExporting)
                 }
                 ToolbarItem(placement: .primaryAction) {
                     SettingsToolbarButton()
@@ -92,6 +95,28 @@ struct HistoryView: View {
         "\(period.rawValue)-\(allEvents.count)-\(medications.count)"
     }
 
+    /// The name a medication row should carry. A deleted medication still has
+    /// doses in the period, and DoseEvent denormalises `medicationName` for
+    /// exactly this: the table must sum to the headline, or the report
+    /// quietly disagrees with itself.
+    private func rowName(for medicationID: String) -> (name: String, detail: String, color: MedicationColor) {
+        if let medication = medications.first(where: { $0.id == medicationID }) {
+            return (
+                medication.displayName,
+                [medication.doseDetail, medication.schedule.frequencySummary()]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " · "),
+                MedicationColor.named(medication.colorName)
+            )
+        }
+        let remembered = allEvents.first { $0.medicationID == medicationID }?.medicationName
+        return (
+            remembered ?? String(localized: "Deleted medication"),
+            String(localized: "No longer in your list"),
+            .default
+        )
+    }
+
     /// Writes the visible period as an A4 PDF doctor report and hands it to
     /// the share sheet.
     ///
@@ -102,13 +127,14 @@ struct HistoryView: View {
     /// from. The timing appendix carries the honest pair — scheduled 08:00,
     /// taken 11:40 — which is the detail a physician actually asks about.
     private func exportSummary() {
-        guard let store else { return }
+        guard let store, !isExporting else { return }
+        isExporting = true
+        defer { isExporting = false }
         let now = Date.now
         let periodStart = Calendar.current.date(byAdding: .day, value: -(period.rawValue - 1), to: Calendar.current.startOfDay(for: now)) ?? now
         let since = Calendar.current.date(byAdding: .day, value: -period.rawValue, to: now) ?? now
 
         let records = store.adherenceRecords(since: since)
-        let names = Dictionary(uniqueKeysWithValues: medications.map { ($0.id, $0) })
 
         let events = allEvents
             .filter { $0.scheduledAt >= periodStart && $0.scheduledAt <= now }
@@ -123,14 +149,12 @@ struct HistoryView: View {
             buckets: AdherenceCalculator.dailyBuckets(records: records, days: period.rawValue, now: now),
             medications: AdherenceCalculator
                 .byMedication(records: records, days: period.rawValue, now: now)
-                .compactMap { entry in
-                    guard let medication = names[entry.medicationID] else { return nil }
+                .map { entry in
+                    let row = rowName(for: entry.medicationID)
                     return DoctorReport.ReportData.MedicationRow(
                         id: entry.medicationID,
-                        name: medication.displayName,
-                        detail: [medication.doseDetail, medication.schedule.frequencySummary()]
-                            .filter { !$0.isEmpty }
-                            .joined(separator: " · "),
+                        name: row.name,
+                        detail: row.detail,
                         summary: entry.summary
                     )
                 },
@@ -147,8 +171,11 @@ struct HistoryView: View {
         }
     }
 
-    /// "Mon 10 Aug · Metformin — scheduled 08:00, taken 11:40 (3 h 40 min late)"
+    /// "Mon 10 Aug · Metformin — scheduled 08:00, taken 11:40 (3 hr 40 min late)"
     /// — only for doses whose timing strayed far enough to matter to a doctor.
+    /// Every word goes through the localization layer: a raw-interpolated
+    /// "scheduled"/"taken" would ship English inside every other language,
+    /// and the hand-built "h"/"min" ignored the locale entirely.
     private func timingNote(for event: DoseEvent) -> String? {
         let delta = event.loggedAt.timeIntervalSince(event.scheduledAt)
         // Notable: over an hour late, or over 15 minutes early.
@@ -159,12 +186,15 @@ struct HistoryView: View {
         let day = event.scheduledAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
         let scheduled = event.scheduledAt.formatted(date: .omitted, time: .shortened)
         let taken = event.loggedAt.formatted(date: .omitted, time: .shortened)
-        let minutes = Int(abs(delta) / 60)
-        let span = minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(minutes) min"
+
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = abs(delta) >= 3600 ? [.hour, .minute] : [.minute]
+        formatter.unitsStyle = .abbreviated
+        let span = formatter.string(from: abs(delta)) ?? "\(Int(abs(delta) / 60)) min"
         let direction = isLate
             ? String(localized: "\(span) late")
             : String(localized: "\(span) early")
-        return "\(day) · \(event.medicationName) — scheduled \(scheduled), taken \(taken) (\(direction))"
+        return String(localized: "\(day) · \(event.medicationName) — scheduled \(scheduled), taken \(taken) (\(direction))")
     }
 
     private func reload() {
@@ -172,22 +202,19 @@ struct HistoryView: View {
         let now = Date.now
         let since = Calendar.current.date(byAdding: .day, value: -period.rawValue, to: now) ?? now
         let records = store.adherenceRecords(since: since)
-        let names = Dictionary(uniqueKeysWithValues: medications.map { ($0.id, $0) })
 
         data = HistoryData(
             summary: AdherenceCalculator.summary(records: records, days: period.rawValue, now: now),
             buckets: AdherenceCalculator.dailyBuckets(records: records, days: period.rawValue, now: now),
             byMedication: AdherenceCalculator
                 .byMedication(records: records, days: period.rawValue, now: now)
-                .compactMap { entry in
-                    guard let medication = names[entry.medicationID] else { return nil }
+                .map { entry in
+                    let row = rowName(for: entry.medicationID)
                     return MedicationAdherence(
                         id: entry.medicationID,
-                        name: medication.displayName,
-                        detail: [medication.doseDetail, medication.schedule.frequencySummary()]
-                            .filter { !$0.isEmpty }
-                            .joined(separator: " · "),
-                        color: MedicationColor.named(medication.colorName),
+                        name: row.name,
+                        detail: row.detail,
+                        color: row.color,
                         summary: entry.summary
                     )
                 },
@@ -198,11 +225,18 @@ struct HistoryView: View {
 
 /// `UIActivityViewController` for the summary file — the URL only exists once
 /// the user asks for it, so `ShareLink` isn't an option.
+///
+/// The PDF is a temp file and temp files must not pile up: when the share
+/// sheet finishes — sent, saved, or cancelled — the file is deleted.
 private struct HistoryShareSheet: UIViewControllerRepresentable {
     let url: URL
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        controller.completionWithItemsHandler = { _, _, _, _ in
+            try? FileManager.default.removeItem(at: url)
+        }
+        return controller
     }
 
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
