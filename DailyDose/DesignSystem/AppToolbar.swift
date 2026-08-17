@@ -48,20 +48,6 @@ struct SettingsToolbarButton: View {
     }
 }
 
-extension View {
-    /// Places the Settings button at the trailing edge.
-    ///
-    /// Apply this **after** any screen-specific toolbar items so Settings ends
-    /// up rightmost — SwiftUI merges `.toolbar` modifiers in application order.
-    func appSettingsToolbar() -> some View {
-        toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                SettingsToolbarButton()
-            }
-        }
-    }
-}
-
 // MARK: - Add medication
 
 /// The add button, identical on every screen that offers one.

@@ -345,27 +345,53 @@ struct MedicationDraftTests {
 @Suite("Medication colour")
 struct MedicationColorTests {
 
-    @Test("Every swatch clears the 3:1 non-text contrast minimum")
+    @Test("Every swatch clears the 3:1 non-text contrast minimum in every trait combination")
     func everySwatchMeetsContrast() {
         // The previous version of this test asserted `a == b || a != b`, which
         // cannot fail — so a threshold chosen by eye left coral at 2.46:1 and
-        // pink at 2.70:1 unguarded. Assert the measured ratio, not the rule.
+        // pink at 2.70:1 unguarded. Then the ratio was measured against the raw
+        // swatch while dark mode and high contrast redraw it — white-on-navy in
+        // high-contrast dark mode rendered at ~2.5:1. Assert the measured ratio
+        // of the rendered colour, in all four trait combinations.
+        let styles: [UIUserInterfaceStyle] = [.light, .dark]
+        let contrasts: [UIAccessibilityContrast] = [.normal, .high]
         for swatch in MedicationColor.allCases {
-            #expect(
-                swatch.glyphContrastRatio >= 3.0,
-                "\(swatch.rawValue) glyph contrast is \(swatch.glyphContrastRatio), below the 3:1 minimum"
-            )
+            for style in styles {
+                for contrast in contrasts {
+                    let ratio = swatch.glyphContrastRatio(style: style, contrast: contrast)
+                    #expect(
+                        ratio >= 3.0,
+                        "\(swatch.rawValue) glyph contrast is \(ratio) in style \(style.rawValue), contrast \(contrast.rawValue) — below the 3:1 minimum"
+                    )
+                }
+            }
         }
     }
 
     @Test("Light swatches take a dark glyph, dark swatches a white one")
     func glyphColorFollowsLuminance() {
         for swatch in [MedicationColor.yellow, .mint, .brown, .olive, .sky, .coral, .pink] {
-            #expect(swatch.onColor != Color.white, "\(swatch.rawValue) is too light for white")
+            #expect(
+                swatch.usesDarkGlyph(style: .light, contrast: .normal),
+                "\(swatch.rawValue) is too light for white"
+            )
         }
-        for swatch in [MedicationColor.navy, .charcoal, .red, .purple] {
-            #expect(swatch.onColor == Color.white, "\(swatch.rawValue) is dark enough for white")
+        for swatch in [MedicationColor.charcoal, .red, .purple] {
+            #expect(
+                !swatch.usesDarkGlyph(style: .light, contrast: .normal),
+                "\(swatch.rawValue) is dark enough for white"
+            )
         }
+    }
+
+    @Test("High-contrast dark mode re-evaluates the glyph on the rendered swatch")
+    func highContrastDarkChoosesByRenderedLuminance() {
+        // Navy's raw luminance says "white glyph", but the rendered swatch is
+        // lifted and brightened until a dark glyph wins 6.6:1 over white's
+        // 2.5:1. The palette default must not fail the users who asked for
+        // more contrast.
+        #expect(MedicationColor.navy.usesDarkGlyph(style: .dark, contrast: .high))
+        #expect(!MedicationColor.navy.usesDarkGlyph(style: .light, contrast: .normal))
     }
 
     @Test("Legacy colour keys still resolve")

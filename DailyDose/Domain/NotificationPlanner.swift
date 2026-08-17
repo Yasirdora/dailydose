@@ -539,10 +539,6 @@ enum NotificationPlanner {
 
     /// Identifiers are ASCII and locale-independent by construction, so
     /// cancelling a notification always finds the one it meant to.
-    static func doseIdentifier(medicationID: String, date: Date) -> String {
-        "dose-\(medicationID)-\(Dose.key(for: date))"
-    }
-
     static func followUpIdentifier(medicationID: String, scheduledAt: Date) -> String {
         "follow-\(medicationID)-\(Dose.key(for: scheduledAt))"
     }

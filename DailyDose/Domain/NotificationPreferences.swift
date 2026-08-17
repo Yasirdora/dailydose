@@ -158,12 +158,6 @@ struct NotificationPreferences: Codable, Equatable, Sendable {
         return minutes >= start || minutes < end  // wraps past midnight
     }
 
-    /// Human-readable window, e.g. "22:00 – 07:00".
-    var quietHoursSummary: String {
-        guard quietHoursEnabled else { return String(localized: "Off") }
-        return "\(quietHoursStart.formatted()) – \(quietHoursEnd.formatted())"
-    }
-
     // MARK: - Persistence
 
     private static let storageKey = "notificationPreferences.v1"
@@ -178,28 +172,5 @@ struct NotificationPreferences: Codable, Equatable, Sendable {
     func save(to defaults: UserDefaults = .standard) {
         guard let data = try? JSONEncoder().encode(self) else { return }
         defaults.set(data, forKey: Self.storageKey)
-    }
-}
-
-/// Observable wrapper so SwiftUI can bind directly to the preferences and every
-/// change is persisted and rescheduled without the view having to remember to.
-@MainActor
-@Observable
-final class NotificationSettingsStore {
-    private let defaults: UserDefaults
-    private let onChange: (NotificationPreferences) -> Void
-
-    var preferences: NotificationPreferences {
-        didSet {
-            guard preferences != oldValue else { return }
-            preferences.save(to: defaults)
-            onChange(preferences)
-        }
-    }
-
-    init(defaults: UserDefaults = .standard, onChange: @escaping (NotificationPreferences) -> Void) {
-        self.defaults = defaults
-        self.onChange = onChange
-        self.preferences = NotificationPreferences.load(from: defaults)
     }
 }

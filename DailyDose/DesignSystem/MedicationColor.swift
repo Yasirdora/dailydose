@@ -65,14 +65,41 @@ enum MedicationColor: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// WCAG relative luminance. Internal rather than private so the test suite
-    /// can assert the real contrast ratio of every swatch.
-    var relativeLuminance: Double {
+    /// WCAG relative luminance of raw sRGB components.
+    static func luminance(r: Double, g: Double, b: Double) -> Double {
         func channel(_ v: Double) -> Double {
             v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
         }
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+    }
+
+    /// The components actually drawn for a given trait combination — the same
+    /// adaptation `color` performs, exposed so the glyph colour and the test
+    /// suite measure the rendered swatch, not the raw one.
+    func resolvedComponents(
+        style: UIUserInterfaceStyle,
+        contrast: UIAccessibilityContrast
+    ) -> (r: Double, g: Double, b: Double) {
+        var (r, g, b) = base
+        if style == .dark {
+            // Lift toward white so saturated colours stay legible on black.
+            r += (1 - r) * 0.12; g += (1 - g) * 0.12; b += (1 - b) * 0.12
+        }
+        if contrast == .high {
+            // Deepen in light mode, brighten further in dark, so the tile
+            // separates cleanly from the card behind it.
+            let factor = style == .dark ? 1.18 : 0.78
+            r = min(max(r * factor, 0), 1)
+            g = min(max(g * factor, 0), 1)
+            b = min(max(b * factor, 0), 1)
+        }
+        return (r, g, b)
+    }
+
+    /// Luminance of the raw swatch. Kept for the test suite.
+    var relativeLuminance: Double {
         let c = base
-        return 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b)
+        return Self.luminance(r: c.r, g: c.g, b: c.b)
     }
 
     /// The glyph colour that actually meets contrast on this swatch, chosen by
@@ -86,36 +113,55 @@ enum MedicationColor: String, CaseIterable, Identifiable, Sendable {
     /// case across the whole palette is 4.1:1.
     static let glyphLuminanceThreshold = 0.21
 
-    var onColor: Color {
-        relativeLuminance > Self.glyphLuminanceThreshold ? Color(white: 0.12) : .white
+    /// Whether the dark glyph outperforms white on a swatch of this luminance.
+    static func usesDarkGlyph(luminance l: Double) -> Bool {
+        l > glyphLuminanceThreshold
     }
 
-    /// Contrast ratio between this swatch and the glyph drawn on it.
-    var glyphContrastRatio: Double {
-        let glyph = relativeLuminance > Self.glyphLuminanceThreshold
-            ? 0.0144   // Color(white: 0.12)
-            : 1.0      // .white
-        let hi = max(relativeLuminance, glyph)
-        let lo = min(relativeLuminance, glyph)
+    /// Whether the rendered swatch takes the dark glyph for these traits.
+    /// Internal so the test suite can assert the choice per trait combination.
+    func usesDarkGlyph(style: UIUserInterfaceStyle, contrast: UIAccessibilityContrast) -> Bool {
+        let c = resolvedComponents(style: style, contrast: contrast)
+        return Self.usesDarkGlyph(luminance: Self.luminance(r: c.r, g: c.g, b: c.b))
+    }
+
+    /// The glyph colour that meets contrast on the swatch as it is actually
+    /// drawn — resolved per traits, because dark mode and high-contrast change
+    /// the swatch's luminance. Measured from `base` instead, white-on-navy in
+    /// high-contrast dark mode falls to ~2.5:1, below the 3:1 non-text minimum,
+    /// in the very setting a low-vision user enabled to get *more* contrast.
+    var onColor: Color {
+        Color(uiColor: UIColor { traits in
+            let c = self.resolvedComponents(
+                style: traits.userInterfaceStyle,
+                contrast: traits.accessibilityContrast
+            )
+            let l = Self.luminance(r: c.r, g: c.g, b: c.b)
+            return Self.usesDarkGlyph(luminance: l) ? UIColor(white: 0.12, alpha: 1) : .white
+        })
+    }
+
+    /// Contrast ratio between the rendered swatch and the glyph drawn on it,
+    /// for one trait combination.
+    func glyphContrastRatio(
+        style: UIUserInterfaceStyle,
+        contrast: UIAccessibilityContrast
+    ) -> Double {
+        let c = resolvedComponents(style: style, contrast: contrast)
+        let l = Self.luminance(r: c.r, g: c.g, b: c.b)
+        let glyph = Self.usesDarkGlyph(luminance: l) ? 0.0144 : 1.0
+        let hi = max(l, glyph)
+        let lo = min(l, glyph)
         return (hi + 0.05) / (lo + 0.05)
     }
 
     var color: Color {
         Color(uiColor: UIColor { traits in
-            var (r, g, b) = self.base
-            if traits.userInterfaceStyle == .dark {
-                // Lift toward white so saturated colours stay legible on black.
-                r += (1 - r) * 0.12; g += (1 - g) * 0.12; b += (1 - b) * 0.12
-            }
-            if traits.accessibilityContrast == .high {
-                // Deepen in light mode, brighten further in dark, so the tile
-                // separates cleanly from the card behind it.
-                let factor = traits.userInterfaceStyle == .dark ? 1.18 : 0.78
-                r = min(max(r * factor, 0), 1)
-                g = min(max(g * factor, 0), 1)
-                b = min(max(b * factor, 0), 1)
-            }
-            return UIColor(red: r, green: g, blue: b, alpha: 1)
+            let c = self.resolvedComponents(
+                style: traits.userInterfaceStyle,
+                contrast: traits.accessibilityContrast
+            )
+            return UIColor(red: c.r, green: c.g, blue: c.b, alpha: 1)
         })
     }
 }
