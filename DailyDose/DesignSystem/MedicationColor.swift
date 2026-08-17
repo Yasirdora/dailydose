@@ -187,12 +187,25 @@ enum Theme {
     }
 
     /// The adherence colour ramp, shared by every ring and percentage label.
+    /// Band boundaries come from `AdherenceBand` — the one source of truth.
     static func adherenceColor(percent: Int?) -> Color {
         guard let percent else { return .secondary }
-        switch percent {
-        case 90...: return taken
-        case 60..<90: return due
-        default: return missed
+        switch AdherenceBand.band(percent: percent) {
+        case .excellent: return taken
+        case .fair: return due
+        case .offTrack: return missed
+        }
+    }
+
+    /// Fixed-sRGB variant of the ramp for the printed report. The PDF is
+    /// always ink on white paper, so it must not follow the device into dark
+    /// mode — but it reads the same bands, so screen and paper never disagree.
+    static func adherencePrintColor(percent: Int?) -> Color {
+        guard let percent else { return Color.gray }
+        switch AdherenceBand.band(percent: percent) {
+        case .excellent: return Color(red: 0.2, green: 0.75, blue: 0.45)
+        case .fair: return Color(red: 0.95, green: 0.62, blue: 0.15)
+        case .offTrack: return Color(red: 0.9, green: 0.3, blue: 0.25)
         }
     }
 }

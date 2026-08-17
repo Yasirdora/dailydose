@@ -278,11 +278,20 @@ private struct LogGroup: Identifiable {
 private struct HeroCard: View {
     let summary: AdherenceCalculator.Summary
 
+    /// Below the trend threshold the ring stays silent and the words say why —
+    /// the counts underneath still tell the user exactly what happened.
+    private var verdictText: String {
+        if summary.total > 0 && !summary.isTrendMeaningful {
+            return String(localized: "A good start — the trend appears after \(AdherenceCalculator.Summary.minimumTrendSample) logged doses.")
+        }
+        return summary.verdict
+    }
+
     var body: some View {
         VStack(spacing: 14) {
-            ProgressRing(percent: summary.percent)
+            ProgressRing(percent: summary.isTrendMeaningful ? summary.percent : nil)
 
-            Text(summary.verdict)
+            Text(verdictText)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

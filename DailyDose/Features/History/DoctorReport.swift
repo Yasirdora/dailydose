@@ -198,18 +198,22 @@ private struct OverviewPage: View {
     }
 
     private var overallSection: some View {
-        HStack(spacing: 28) {
+        // Below the trend threshold the ring shows a dash, same as the
+        // on-screen hero card — a doctor reading "100%" over one logged dose
+        // would be misled.
+        let percent = data.overall.isTrendMeaningful ? data.overall.percent : nil
+        return HStack(spacing: 28) {
             ZStack {
                 Circle()
                     .stroke(Color.gray.opacity(0.15), lineWidth: 10)
-                if let percent = data.overall.percent {
+                if let percent {
                     Circle()
                         .trim(from: 0, to: max(0.01, Double(percent) / 100))
-                        .stroke(reportTint(percent: percent),
+                        .stroke(Theme.adherencePrintColor(percent: percent),
                                 style: StrokeStyle(lineWidth: 10, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                 }
-                Text(data.overall.percent.map { "\($0)%" } ?? "—")
+                Text(percent.map { "\($0)%" } ?? "—")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(Color.black)
@@ -291,15 +295,6 @@ private struct OverviewPage: View {
                     .font(.system(size: 10))
                     .foregroundStyle(Color.gray)
             }
-        }
-    }
-
-    private func reportTint(percent: Int?) -> Color {
-        guard let percent else { return Color.gray }
-        switch percent {
-        case 90...: return Color(red: 0.2, green: 0.75, blue: 0.45)
-        case 70..<90: return Color(red: 0.95, green: 0.62, blue: 0.15)
-        default: return Color(red: 0.9, green: 0.3, blue: 0.25)
         }
     }
 }

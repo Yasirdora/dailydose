@@ -1,5 +1,27 @@
 import Foundation
 
+/// The one set of adherence band boundaries: 90%+ excellent, 60–89% fair,
+/// below 60% off track.
+///
+/// Colour (`Theme.adherenceColor`), print colour (the doctor report) and
+/// words (`Summary.verdict`) all read from here, so a "good" score is the
+/// same score on screen, on paper and in prose. The boundaries live in the
+/// domain rather than the design system because they are a clinical
+/// communication decision, not a paint decision. 60/90 over the report's
+/// old 70/90: a ramp that calls 65% "missed-red" punishes exactly the
+/// people the app exists to encourage.
+enum AdherenceBand: Sendable {
+    case excellent, fair, offTrack
+
+    static func band(percent: Int) -> AdherenceBand {
+        switch percent {
+        case 90...: .excellent
+        case 60..<90: .fair
+        default: .offTrack
+        }
+    }
+}
+
 /// Adherence over a window, plus the per-day breakdown the chart draws.
 ///
 /// One rule underpins the whole file: **everything is measured by the day the
@@ -22,6 +44,13 @@ enum AdherenceCalculator {
             guard total > 0 else { return nil }
             return Int((100.0 * Double(taken) / Double(total)).rounded())
         }
+
+        /// Fewer logged doses than this make a percentage noise, not signal:
+        /// one taken dose out of one renders as a triumphant 100% ring, and
+        /// one missed out of one as a 0% alarm. Below the threshold, surfaces
+        /// show the counts and a dash instead of a verdict.
+        static let minimumTrendSample = 5
+        var isTrendMeaningful: Bool { total >= Self.minimumTrendSample }
     }
 
     struct DayBucket: Identifiable, Equatable, Sendable {
@@ -129,11 +158,10 @@ extension AdherenceCalculator.Summary {
         guard let percent else {
             return String(localized: "Log your first doses and the story begins.")
         }
-        switch percent {
-        case 90...: return String(localized: "Excellent — barely a dose missed.")
-        case 70..<90: return String(localized: "Good — most doses are taken.")
-        case 50..<70: return String(localized: "Fair — there's room to improve.")
-        default: return String(localized: "Off track — let's tighten up the reminders.")
+        switch AdherenceBand.band(percent: percent) {
+        case .excellent: return String(localized: "Excellent — barely a dose missed.")
+        case .fair: return String(localized: "Good — most doses are taken.")
+        case .offTrack: return String(localized: "Off track — let's tighten up the reminders.")
         }
     }
 }

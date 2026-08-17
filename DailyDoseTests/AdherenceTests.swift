@@ -140,4 +140,29 @@ struct AdherenceTests {
         #expect(verdict(taken: 10, total: 10) != verdict(taken: 5, total: 10))
         #expect(AdherenceCalculator.Summary().verdict.isEmpty == false)
     }
+
+    @Test("Colour, print colour and verdict share one set of band boundaries")
+    func oneRampEverywhere() {
+        // M5: the screen ramp, the PDF ramp and the prose verdict used to draw
+        // their lines at 60/90, 70/90 and 50/70/90 respectively — the same
+        // score could be "good" in words and red on paper.
+        #expect(AdherenceBand.band(percent: 90) == .excellent)
+        #expect(AdherenceBand.band(percent: 89) == .fair)
+        #expect(AdherenceBand.band(percent: 60) == .fair)
+        #expect(AdherenceBand.band(percent: 59) == .offTrack)
+    }
+
+    @Test("A handful of doses is a start, not a trend")
+    func smallSampleIsNotATrend() {
+        // M6: 1 of 1 taken must not paint a 100% ring.
+        var one = AdherenceCalculator.Summary()
+        one.taken = 1
+        #expect(one.percent == 100)
+        #expect(!one.isTrendMeaningful)
+
+        var five = AdherenceCalculator.Summary()
+        five.taken = 4
+        five.missed = 1
+        #expect(five.isTrendMeaningful)
+    }
 }
