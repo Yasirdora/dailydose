@@ -13,7 +13,10 @@ import UIKit
 struct HistoryView: View {
     @Environment(\.doseStore) private var store
     @Query private var medications: [Medication]
-    @Query(sort: \DoseEvent.scheduledAt, order: .reverse) private var allEvents: [DoseEvent]
+    /// Bounded to the longest window this screen can show. The old query
+    /// materialised every event ever recorded — two years at four doses a day
+    /// is ~2,900 objects — to draw a 7-day chart.
+    @Query private var events: [DoseEvent]
 
     @State private var period: Period = .week
     @State private var data = HistoryData()
@@ -38,6 +41,18 @@ struct HistoryView: View {
             case .month: String(localized: "Month")
             }
         }
+    }
+
+    init() {
+        // One day past the longest period, so a month view ending today still
+        // sees its first day after the clock rolls past midnight.
+        let since = Calendar.current.date(
+            byAdding: .day, value: -(Period.month.rawValue + 1), to: .now
+        ) ?? .distantPast
+        _events = Query(
+            filter: #Predicate { $0.scheduledAt >= since },
+            sort: \DoseEvent.scheduledAt, order: .reverse
+        )
     }
 
     var body: some View {
@@ -92,7 +107,7 @@ struct HistoryView: View {
     /// Recomputes when the period changes or when the underlying data does,
     /// rather than on every render.
     private var reloadKey: String {
-        "\(period.rawValue)-\(allEvents.count)-\(medications.count)"
+        "\(period.rawValue)-\(events.count)-\(medications.count)"
     }
 
     /// The name a medication row should carry. A deleted medication still has
@@ -109,7 +124,7 @@ struct HistoryView: View {
                 MedicationColor.named(medication.colorName)
             )
         }
-        let remembered = allEvents.first { $0.medicationID == medicationID }?.medicationName
+        let remembered = events.first { $0.medicationID == medicationID }?.medicationName
         return (
             remembered ?? String(localized: "Deleted medication"),
             String(localized: "No longer in your list"),
@@ -136,10 +151,10 @@ struct HistoryView: View {
 
         let records = store.adherenceRecords(since: since)
 
-        let events = allEvents
+        let windowEvents = events
             .filter { $0.scheduledAt >= periodStart && $0.scheduledAt <= now }
             .sorted { $0.scheduledAt > $1.scheduledAt }
-        let notable = events.compactMap(timingNote(for:))
+        let notable = windowEvents.compactMap(timingNote(for:))
 
         let reportData = DoctorReport.ReportData(
             periodDays: period.rawValue,
