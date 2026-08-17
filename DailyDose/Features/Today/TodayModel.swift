@@ -190,6 +190,15 @@ struct ResolvedDose: Identifiable, Equatable {
         default: false
         }
     }
+
+    /// The screen's single definition of "missed": logged as missed, or
+    /// overdue with a window that has already closed. A dose that can still
+    /// be taken is late, never missed — the day those two words blur is the
+    /// day the record stops being honest. Three call sites used to each
+    /// invent their own version of this; they now share this one.
+    var isMissed: Bool {
+        state == .logged(.missed) || (state == .overdue && !needsAction())
+    }
 }
 
 struct DayPlan: Equatable {
@@ -265,7 +274,7 @@ struct MedicationDayCard: Identifiable, Equatable {
     /// is no longer today — both are missed, and pretending otherwise is the
     /// one lie this screen must never tell.
     func isMissed(_ dose: ResolvedDose) -> Bool {
-        dose.state == .logged(.missed) || (dose.state == .overdue && !dose.needsAction())
+        dose.isMissed
     }
 
     /// Which section of the day this card belongs to. A card lives in exactly

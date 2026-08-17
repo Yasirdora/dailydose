@@ -52,6 +52,20 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         didReceive response: UNNotificationResponse
     ) async {
         let userInfo = response.notification.request.content.userInfo
+
+        // A bundle speaks for several medications at once and carries no
+        // single-medication ID — guard on it first, or the tap falls through
+        // the medicationID check below and dies silently, which is exactly
+        // what a bundled banner tap used to do.
+        if let bundleIDs = userInfo[NotificationPayload.bundledMedicationIDs] as? [String] {
+            let time = (userInfo[NotificationPayload.time] as? String).flatMap(TimeOfDay.init)
+            await handleBundle(
+                medicationIDs: bundleIDs, time: time,
+                deliveredAt: response.notification.date
+            )
+            return
+        }
+
         guard let medicationID = userInfo[NotificationPayload.medicationID] as? String else { return }
 
         let explicitDate = (userInfo[NotificationPayload.scheduledAt] as? TimeInterval)
@@ -109,6 +123,26 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             // The user tapped the body (or dismissed). Open to the dose.
             pendingDeepLink = DeepLink(medicationID: medicationID, scheduledAt: scheduledAt)
         }
+    }
+
+    /// A bundled banner names several medications and carries no actions —
+    /// "Taken" would be ambiguous across them. Tapping it opens the app on
+    /// the day the banner was delivered for, highlighting the first one,
+    /// where every due dose already has its own one-tap button.
+    private func handleBundle(
+        medicationIDs: [String],
+        time: TimeOfDay?,
+        deliveredAt: Date
+    ) {
+        guard let first = medicationIDs.first else { return }
+        var scheduledAt: Date? = nil
+        if let time, let medication = store.medication(id: first) {
+            scheduledAt = ReminderResolution.resolve(
+                schedule: medication.schedule, time: time,
+                deliveredAt: deliveredAt, calendar: .current
+            )
+        }
+        pendingDeepLink = DeepLink(medicationID: first, scheduledAt: scheduledAt)
     }
 
     /// Works out which dose a notification refers to.

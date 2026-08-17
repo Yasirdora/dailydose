@@ -30,6 +30,9 @@ struct TodayView: View {
     /// Once a bloom has dissolved it leaves the view tree entirely, so the
     /// resting app renders zero animation frames.
     @State private var breathDone = 0
+    /// A store write that failed, shown plainly. Believing a dose was logged
+    /// when it wasn't is the one failure this app can never have silently.
+    @State private var storeError: String?
 
     private enum Route: String, Identifiable {
         case calendar, add
@@ -54,6 +57,18 @@ struct TodayView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
             .toast($toast)
+            .alert(
+                String(localized: "Couldn't Save"),
+                isPresented: Binding(
+                    get: { storeError != nil },
+                    set: { if !$0 { storeError = nil } }
+                ),
+                presenting: storeError
+            ) { _ in
+                Button(String(localized: "OK"), role: .cancel) {}
+            } message: { detail in
+                Text(detail)
+            }
         }
         .task { start() }
         .onReceive(ticker) { model?.rebuild(now: $0) }
@@ -374,6 +389,14 @@ struct TodayView: View {
         withAnimation(.smooth(duration: 0.35)) {
             model?.log(dose, as: status, at: loggedAt)
         }
+        // A failed save must not play the success story — no haptic, no
+        // bloom. Say what happened instead.
+        if let error = environment.store.lastError {
+            environment.store.lastError = nil
+            storeError = error.errorDescription
+            Haptics.error()
+            return
+        }
         switch status {
         case .taken:
             Haptics.success()
@@ -401,6 +424,12 @@ struct TodayView: View {
 
     private func undo(_ dose: ResolvedDose) {
         withAnimation(.smooth(duration: 0.35)) { model?.undo(dose) }
+        if let error = environment.store.lastError {
+            environment.store.lastError = nil
+            storeError = error.errorDescription
+            Haptics.error()
+            return
+        }
         Haptics.tap()
     }
 }
@@ -464,9 +493,10 @@ private struct DaySummarySheet: View {
 
     private var taken: Int { plan.doses.filter { $0.state == .logged(.taken) }.count }
     private var skipped: Int { plan.doses.filter { $0.state == .logged(.skipped) }.count }
-    /// Logged-missed plus doses whose window closed unlogged — both are missed.
+    /// Logged-missed plus doses whose window closed unlogged — both are
+    /// missed; a dose that can still be taken is late, not missed.
     private var missed: Int {
-        plan.doses.filter { $0.state == .logged(.missed) || $0.state == .overdue }.count
+        plan.doses.filter(\.isMissed).count
     }
 
     private var percent: Int? {
@@ -551,7 +581,7 @@ private struct DayCompleteCard: View {
 
     private var taken: Int { day.takenCount }
     private var skipped: Int { day.doses.filter { $0.state == .logged(.skipped) }.count }
-    private var missed: Int { day.doses.filter { $0.state == .logged(.missed) }.count }
+    private var missed: Int { day.doses.filter(\.isMissed).count }
     private var allTaken: Bool { taken == day.doses.count }
 
     var body: some View {

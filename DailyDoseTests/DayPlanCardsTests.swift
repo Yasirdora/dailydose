@@ -91,3 +91,43 @@ struct DayPlanCardsTests {
         #expect(sorted.map(\.medication.name) == ["Early", "Late"])
     }
 }
+
+/// H6: the screen used to hold three definitions of "missed" — the summary
+/// sheet counted every overdue dose (even one you could still take), the
+/// completion card counted only logged misses, and the card tier used the
+/// correct union. All now share `ResolvedDose.isMissed`.
+@Suite("H6: one definition of missed")
+struct MissedDefinitionTests {
+
+    private let calendar = Fixture.calendar()
+
+    private func resolved(day: Date, hour: Int, state: DoseState) -> ResolvedDose {
+        let at = calendar.date(byAdding: .hour, value: hour, to: calendar.startOfDay(for: day))!
+        return ResolvedDose(
+            dose: Dose(medicationID: "m", scheduledAt: at, state: state),
+            medication: Fixture.medication(schedule: Fixture.schedule(start: Fixture.date(2026, 1, 1)))
+        )
+    }
+
+    @Test("An overdue dose that can still be taken is late, not missed")
+    func actionableOverdueIsNotMissed() {
+        // Overdue but scheduled today: still actionable, so not missed.
+        let dose = resolved(day: .now, hour: 8, state: .overdue)
+        #expect(!dose.isMissed,
+                "Counting a still-takable dose as missed is how panic starts")
+    }
+
+    @Test("Yesterday's unlogged overdue dose is missed")
+    func expiredOverdueIsMissed() {
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: .now)!
+        let dose = resolved(day: yesterday, hour: 8, state: .overdue)
+        #expect(dose.isMissed)
+    }
+
+    @Test("Logged outcomes keep their own truth")
+    func loggedStates() {
+        #expect(resolved(day: .now, hour: 8, state: .logged(.missed)).isMissed)
+        #expect(!resolved(day: .now, hour: 8, state: .logged(.taken)).isMissed)
+        #expect(!resolved(day: .now, hour: 8, state: .logged(.skipped)).isMissed)
+    }
+}
