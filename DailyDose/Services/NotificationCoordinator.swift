@@ -63,6 +63,9 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             medicationID: medicationID,
             explicitDate: explicitDate,
             time: time,
+            // The delivery date, never the tap date: a stale banner still
+            // refers to the dose it was fired for.
+            deliveredAt: response.notification.date,
             title: response.notification.request.content.title,
             body: response.notification.request.content.body
         )
@@ -73,13 +76,15 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         medicationID: String,
         explicitDate: Date?,
         time: TimeOfDay?,
+        deliveredAt: Date,
         title: String,
         body: String
     ) async {
         // A refill alert carries no dose; tapping it should just open the
         // medication, not try to log something.
         guard let scheduledAt = resolveScheduledAt(
-            medicationID: medicationID, explicitDate: explicitDate, time: time
+            medicationID: medicationID, explicitDate: explicitDate,
+            time: time, deliveredAt: deliveredAt
         ) else {
             pendingDeepLink = DeepLink(medicationID: medicationID, scheduledAt: nil)
             return
@@ -110,25 +115,20 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     ///
     /// Follow-ups and snoozes carry the exact instant. Repeating dose reminders
     /// carry only a time of day, because the trigger has no notion of *which*
-    /// day it fired on — so we resolve the most recent occurrence of that time
-    /// at or before now, using the medication's real schedule.
+    /// day it fired on — so we resolve against the banner's delivery date via
+    /// `ReminderResolution`, never against the moment it was tapped.
     private func resolveScheduledAt(
         medicationID: String,
         explicitDate: Date?,
-        time: TimeOfDay?
+        time: TimeOfDay?,
+        deliveredAt: Date
     ) -> Date? {
         if let explicitDate { return explicitDate }
         guard let time,
               let medication = store.medication(id: medicationID) else { return nil }
-
-        let schedule = medication.schedule
-        let calendar = Calendar.current
-        let now = Date.now
-
-        // Look back far enough to cover sparse schedules (monthly, every 90
-        // days) without scanning forever.
-        guard let from = calendar.date(byAdding: .day, value: -45, to: now) else { return nil }
-        return schedule.occurrences(from: from, to: now, calendar: calendar)
-            .last { TimeOfDay(from: $0, calendar: calendar) == time }
+        return ReminderResolution.resolve(
+            schedule: medication.schedule, time: time,
+            deliveredAt: deliveredAt, calendar: .current
+        )
     }
 }
