@@ -150,9 +150,34 @@ struct DoseDetailSheet: View {
             .padding(12)
             .transition(.opacity)
 
-        case .logged(.skipped), .logged(.missed):
-            // One path forward: mark it taken. Once it's taken, the
-            // .logged(.taken) case offers the undo — no parallel choices.
+        case .logged(.skipped):
+            // A skip is one tap with no confirmation, so the escape must be
+            // one tap too: undo first, the way MedicationDaySheet offers it.
+            // "Mark as taken" stays, but second — recording a pill you didn't
+            // take should never be the only way back.
+            Divider().padding(.leading, 16)
+            HStack(spacing: 10) {
+                Button { undo() } label: {
+                    Label(String(localized: "Undo"), systemImage: "arrow.uturn.backward")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .secondaryButton()
+
+                Button { act(.taken) } label: {
+                    Label(String(localized: "Taken"), systemImage: "checkmark")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .prominentButton()
+                .tint(Theme.taken)
+            }
+            .padding(12)
+            .transition(.opacity)
+
+        case .logged(.missed):
+            // Missed is the system's record, not the user's tap: the one
+            // correction that matters is "I actually took it".
             Divider().padding(.leading, 16)
             Button { act(.taken) } label: {
                 Label(String(localized: "Mark as taken"), systemImage: "checkmark")

@@ -84,7 +84,7 @@ struct MedicationDayCardView: View {
             }
         }
         .padding(16)
-        .cardStyle(interactive: true)
+        .cardStyle()
         .background(alignment: .bottom) { stackEdges }
         // Room for the peeking edges, so they never touch the next card.
         .padding(.bottom, showsStackEdges ? 12 : 0)

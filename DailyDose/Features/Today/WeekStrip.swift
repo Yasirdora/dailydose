@@ -51,7 +51,7 @@ struct WeekStrip: View {
             }
         }
         .padding(.vertical, 12)
-        .cardStyle(cornerRadius: 20, interactive: true)
+        .cardStyle(cornerRadius: 20)
     }
 
     private func label(for day: WeekDay) -> String {

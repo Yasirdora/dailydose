@@ -22,10 +22,18 @@ struct TodayView: View {
     @State private var model: TodayModel?
     @State private var toast: Toast?
     @State private var presentedDose: ResolvedDose?
-    /// Medication whose day sheet is open. Re-read from the rebuilt model on
-    /// every log, so the sheet's rows update in place instead of showing a
-    /// stale snapshot.
-    @State private var daySheetMedicationID: String?
+    /// Medication whose day sheet is open — plus WHICH day's card opened it.
+    /// Tapping tomorrow's card for a medication that also runs today must
+    /// open tomorrow's card; resolving by id across both days used to find
+    /// today's first, and the user concluded tomorrow's doses were already
+    /// taken. Re-read from the rebuilt model on every log, so the sheet's
+    /// rows update in place instead of showing a stale snapshot.
+    @State private var daySheetTarget: DaySheetTarget?
+
+    struct DaySheetTarget: Equatable {
+        let medicationID: String
+        let isTomorrow: Bool
+    }
     @State private var isShowingDaySummary = false
     @State private var route: Route?
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
@@ -113,19 +121,22 @@ struct TodayView: View {
             )
         }
         .sheet(isPresented: Binding(
-            get: { daySheetMedicationID != nil },
-            set: { if !$0 { daySheetMedicationID = nil } }
+            get: { daySheetTarget != nil },
+            set: { if !$0 { daySheetTarget = nil } }
         )) {
-            if let model, let id = daySheetMedicationID,
-               let card = (model.day.cards + DayPlan(doses: model.tomorrow).cards)
-                    .first(where: { $0.medication.id == id }) {
-                MedicationDaySheet(
-                    card: card,
-                    now: model.now,
-                    window: model.window,
-                    onLog: { log($0, as: $1, at: $2) },
-                    onUndo: { undo($0) }
-                )
+            if let model, let target = daySheetTarget {
+                let cards = target.isTomorrow
+                    ? DayPlan(doses: model.tomorrow).cards
+                    : model.day.cards
+                if let card = cards.first(where: { $0.medication.id == target.medicationID }) {
+                    MedicationDaySheet(
+                        card: card,
+                        now: model.now,
+                        window: model.window,
+                        onLog: { log($0, as: $1, at: $2) },
+                        onUndo: { undo($0) }
+                    )
+                }
             }
         }
         .sheet(isPresented: $isShowingDaySummary) {
@@ -260,7 +271,7 @@ struct TodayView: View {
                     now: model.now, window: model.window,
                     onLog: { _, _ in },
                     onOpen: { presentedDose = $0 },
-                    onOpenDay: { daySheetMedicationID = card.medication.id }
+                    onOpenDay: { daySheetTarget = DaySheetTarget(medicationID: card.medication.id, isTomorrow: true) }
                 )
             }
         }
@@ -289,7 +300,7 @@ struct TodayView: View {
                 window: model.window,
                 onLog: { log($0, as: $1) },
                 onOpen: { presentedDose = $0 },
-                onOpenDay: { daySheetMedicationID = card.medication.id }
+                onOpenDay: { daySheetTarget = DaySheetTarget(medicationID: card.medication.id, isTomorrow: false) }
             )
             .transition(.opacity)
         }

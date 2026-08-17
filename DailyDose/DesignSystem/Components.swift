@@ -162,7 +162,6 @@ struct StatusChip: View {
 /// belongs: the tab bar and toolbar controls.
 struct CardBackground: ViewModifier {
     var cornerRadius: CGFloat = 22
-    var interactive = false
 
     func body(content: Content) -> some View {
         content.background(
@@ -173,8 +172,11 @@ struct CardBackground: ViewModifier {
 }
 
 extension View {
-    func cardStyle(cornerRadius: CGFloat = 22, interactive: Bool = false) -> some View {
-        modifier(CardBackground(cornerRadius: cornerRadius, interactive: interactive))
+    /// One card surface for the whole app. (An `interactive:` parameter used
+    /// to be accepted here and silently ignored — a parameter that does
+    /// nothing is a promise the code can't keep.)
+    func cardStyle(cornerRadius: CGFloat = 22) -> some View {
+        modifier(CardBackground(cornerRadius: cornerRadius))
     }
 
     /// The app's primary button treatment, one call site for the whole app.
