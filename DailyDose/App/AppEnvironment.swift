@@ -130,7 +130,7 @@ final class AppEnvironment {
         func hoursLater(_ hours: Int) -> TimeOfDay {
             TimeOfDay(hour: (nowTime.hour + hours) % 24, minute: nowTime.minute)!
         }
-        let course = store.add(
+        _ = store.add(
             name: "Amoxicillin", doseDetail: "500 mg", notes: "Finish the course",
             colorName: MedicationColor.coral.rawValue,
             schedule: DoseSchedule(

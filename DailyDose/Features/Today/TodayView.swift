@@ -652,6 +652,7 @@ private struct DayCompleteCard: View {
     let day: DayPlan
 
     @State private var appeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var taken: Int { day.takenCount }
     private var skipped: Int { day.doses.filter { $0.state == .logged(.skipped) }.count }
@@ -663,7 +664,8 @@ private struct DayCompleteCard: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 34))
                 .foregroundStyle(Theme.taken)
-                .symbolEffect(.bounce, value: appeared)
+                // A celebration is only a celebration when motion is welcome.
+                .symbolEffect(.bounce, value: reduceMotion ? false : appeared)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(allTaken

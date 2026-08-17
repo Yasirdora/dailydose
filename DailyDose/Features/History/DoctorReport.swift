@@ -245,11 +245,28 @@ private struct OverviewPage: View {
 
             // Hand-drawn bars, not SwiftUI Charts: fully deterministic in a
             // renderer, no animation or layout passes to surprise the PDF.
+            //
+            // Meaning is carried by shape, not hue alone — this page's normal
+            // fate is a monochrome office laser, where green-at-full and
+            // red-at-55% are the same grey. The outline's height is the day's
+            // scheduled count; the solid fill rising from the bottom is the
+            // taken share; a day with nothing scheduled is a hollow dash.
             HStack(alignment: .bottom, spacing: data.periodDays > 7 ? 3 : 6) {
                 ForEach(data.buckets) { bucket in
-                    RoundedRectangle(cornerRadius: data.periodDays > 7 ? 2 : 4, style: .continuous)
-                        .fill(barColor(for: bucket))
-                        .frame(height: barHeight(for: bucket))
+                    if bucket.total > 0 {
+                        ZStack(alignment: .bottom) {
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .stroke(Color.gray.opacity(0.5), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .fill(barColor(for: bucket))
+                                .frame(height: max(3, outlineHeight(for: bucket) * bucket.fraction))
+                        }
+                        .frame(height: outlineHeight(for: bucket))
+                    } else {
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .stroke(Color.gray.opacity(0.35), lineWidth: 1)
+                            .frame(height: 8)
+                    }
                 }
             }
             .frame(height: 90)
@@ -261,20 +278,29 @@ private struct OverviewPage: View {
             }
             .font(.system(size: 9))
             .foregroundStyle(Color.gray)
+
+            Text(String(localized: "Outline: doses scheduled · Solid fill: doses taken · Dash: nothing scheduled"))
+                .font(.system(size: 9))
+                .foregroundStyle(Color.gray)
         }
     }
 
-    private func barHeight(for bucket: AdherenceCalculator.DayBucket) -> CGFloat {
-        guard bucket.total > 0 else { return 4 }
-        return max(6, 90 * bucket.fraction)
+    private var cornerRadius: CGFloat { data.periodDays > 7 ? 2 : 4 }
+
+    /// Tallest scheduled day in the period, so outline heights are relative.
+    private var maxDailyTotal: Int {
+        max(1, data.buckets.map(\.total).max() ?? 1)
+    }
+
+    private func outlineHeight(for bucket: AdherenceCalculator.DayBucket) -> CGFloat {
+        max(10, 90 * CGFloat(bucket.total) / CGFloat(maxDailyTotal))
     }
 
     private func barColor(for bucket: AdherenceCalculator.DayBucket) -> Color {
-        guard bucket.total > 0 else { return Color.gray.opacity(0.18) }
         if bucket.taken == bucket.total { return Color(red: 0.2, green: 0.75, blue: 0.45) }
         return bucket.taken > 0
             ? Color(red: 0.95, green: 0.62, blue: 0.15)
-            : Color(red: 0.9, green: 0.3, blue: 0.25).opacity(0.55)
+            : Color(red: 0.9, green: 0.3, blue: 0.25)
     }
 
     private var medicationSection: some View {
