@@ -139,11 +139,17 @@ actor NotificationService: NotificationScheduling {
         // Importance drives delivery, not a blanket "everything is urgent".
         //
         // `.timeSensitive` is the ceiling we can honestly reach: it breaks
-        // through Focus modes but still respects the ringer switch, and needs
-        // no entitlement. Apple's *Critical Alerts* — which also override mute
-        // — are granted only where a missed alert is clinically dangerous, and
-        // a general medication reminder does not qualify. Nothing in this app
-        // claims otherwise.
+        // through Focus modes but still respects the ringer switch. It DOES
+        // need an entitlement — `com.apple.developer.usernotifications
+        // .time-sensitive`, declared in DailyDose.entitlements. Without it the
+        // system silently demotes the notification to `.active`, which is
+        // exactly the kind of invisible failure this app exists to prevent;
+        // the entitlement is standard for medication reminders and needs no
+        // special Apple approval.
+        // Apple's *Critical Alerts* — which also override mute — are granted
+        // only where a missed alert is clinically dangerous, and a general
+        // medication reminder does not qualify. Nothing in this app claims
+        // otherwise.
         // The tone is already resolved against importance by the planner, so a
         // `.gentle` medication is silent here without this file re-deriving the
         // rule. `UNNotificationSound(named:)` resolves against the app bundle;
