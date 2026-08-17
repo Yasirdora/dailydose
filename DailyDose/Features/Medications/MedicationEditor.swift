@@ -18,6 +18,9 @@ struct MedicationEditor: View {
     @State private var draft = MedicationDraft()
     @State private var route: Route?
     @State private var didLoad = false
+    /// The essentials stay visible. Everything else is available without
+    /// making a first-time setup feel like a medical intake form.
+    @State private var showsMoreOptions = false
 
     private enum Route: String, Identifiable {
         case scanner, frequency, duration
@@ -30,9 +33,14 @@ struct MedicationEditor: View {
                 previewSection
                 detailsSection
                 scheduleSection
-                supplySection
-                remindersSection
-                colorSection
+                moreOptionsSection
+
+                if showsMoreOptions {
+                    notesSection
+                    supplySection
+                    remindersSection
+                    colorSection
+                }
             }
             .navigationTitle(medication == nil
                              ? String(localized: "Add Medication")
@@ -101,62 +109,84 @@ struct MedicationEditor: View {
     }
 
     private var detailsSection: some View {
-        Section(String(localized: "Medication")) {
+        Section {
             if LabelScannerSheet.isAvailable {
                 Button {
                     route = .scanner
                 } label: {
-                    Label(String(localized: "Scan label"), systemImage: "camera.viewfinder")
-                        .frame(maxWidth: .infinity)
+                    Label(String(localized: "Scan medication"), systemImage: "camera.viewfinder")
+                        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
                 }
                 .secondaryButton()
             }
 
-            TextField(String(localized: "Name"), text: $draft.name)
+            TextField(String(localized: "Medication name"), text: $draft.name)
                 .textInputAutocapitalization(.words)
-            TextField(String(localized: "Dose (e.g. 500 mg, 1 tablet)"), text: $draft.doseDetail)
-            TextField(String(localized: "Notes (e.g. take with food)"), text: $draft.notes)
+            TextField(String(localized: "Strength or dose (e.g. 500 mg, 1 tablet)"), text: $draft.doseDetail)
+        } header: {
+            Text(String(localized: "Medication"))
+        } footer: {
+            if draft.trimmedName.isEmpty {
+                Text(String(localized: "Enter the medication name to continue."))
+                    .foregroundStyle(Theme.due)
+            } else {
+                Text(String(localized: "You can add notes, supply tracking and reminder preferences under More Options."))
+            }
         }
     }
 
     private var scheduleSection: some View {
         Section {
             Button { route = .frequency } label: {
-                LabeledContent(String(localized: "Frequency")) {
-                    Text(draft.frequencySummary)
-                }
+                EditorSummaryRow(
+                    label: String(localized: "How often"),
+                    value: draft.frequencySummary
+                )
             }
-            .foregroundStyle(.primary)
+            .buttonStyle(.plain)
+            .accessibilityHint(String(localized: "Choose how often this medication is taken"))
 
             if draft.kind == .everyXDays {
                 Stepper(value: $draft.intervalDays, in: 1...90) {
-                    Text(String(localized: "Every \(draft.intervalDays) days"))
+                    LabeledContent(String(localized: "Repeat every")) {
+                        Text(daysCopy(draft.intervalDays))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
             if draft.kind == .everyXHours {
                 Stepper(value: $draft.intervalHours, in: 1...24) {
-                    Text(draft.intervalHours == 1
-                         ? String(localized: "Every hour")
-                         : String(localized: "Every \(draft.intervalHours) hours"))
+                    LabeledContent(String(localized: "Repeat every")) {
+                        Text(hoursCopy(draft.intervalHours))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
             if draft.kind == .cycle {
                 Stepper(value: $draft.cycleOnDays, in: 1...90) {
-                    Text(String(localized: "Take for \(draft.cycleOnDays) days"))
+                    LabeledContent(String(localized: "Take for")) {
+                        Text(daysCopy(draft.cycleOnDays))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Stepper(value: $draft.cycleOffDays, in: 1...30) {
-                    Text(String(localized: "Break for \(draft.cycleOffDays) days"))
+                    LabeledContent(String(localized: "Then pause for")) {
+                        Text(daysCopy(draft.cycleOffDays))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
             if draft.kind == .weekdays {
+                Text(String(localized: "Which days?"))
+                    .font(.subheadline.weight(.medium))
                 WeekdayPicker(selection: $draft.weekdays)
             }
 
             if draft.kind == .monthly {
-                Picker(String(localized: "On day"), selection: $draft.dayOfMonth) {
+                Picker(String(localized: "Day of month"), selection: $draft.dayOfMonth) {
                     ForEach(1...31, id: \.self) { day in
                         Text(day.ordinalString()).tag(day)
                     }
@@ -166,7 +196,7 @@ struct MedicationEditor: View {
             ForEach(Array(draft.times.sorted().enumerated()), id: \.element) { index, time in
                 DatePicker(
                     draft.kind == .everyXHours
-                        ? String(localized: "First dose at")
+                        ? String(localized: "Starting at")
                         : draft.times.count == 1
                             ? String(localized: "Time")
                             : String(localized: "Time \(index + 1)"),
@@ -182,11 +212,13 @@ struct MedicationEditor: View {
             )
 
             Button { route = .duration } label: {
-                LabeledContent(String(localized: "Duration")) {
-                    Text(draft.durationSummary)
-                }
+                EditorSummaryRow(
+                    label: String(localized: "Ends"),
+                    value: draft.durationSummary
+                )
             }
-            .foregroundStyle(.primary)
+            .buttonStyle(.plain)
+            .accessibilityHint(String(localized: "Choose whether this medication has an end date"))
         } header: {
             Text(String(localized: "Schedule"))
         } footer: {
@@ -198,7 +230,54 @@ struct MedicationEditor: View {
             } else if draft.times.isEmpty {
                 Text(String(localized: "Add at least one time so reminders can be scheduled."))
                     .foregroundStyle(Theme.due)
+            } else if draft.kind == .daily, draft.times.count > 1 {
+                Text(String(localized: "Review the suggested times and change them to match your medication instructions."))
             }
+        }
+    }
+
+    /// A deliberate boundary: the everyday plan ends above this row. Optional
+    /// personalisation remains easy to find without competing with the first
+    /// successful setup.
+    private var moreOptionsSection: some View {
+        Section {
+            Button {
+                withAnimation(.smooth(duration: 0.25)) {
+                    showsMoreOptions.toggle()
+                }
+                Haptics.select()
+            } label: {
+                HStack(spacing: 12) {
+                    Label(
+                        showsMoreOptions
+                            ? String(localized: "Fewer options")
+                            : String(localized: "More options"),
+                        systemImage: "slider.horizontal.3"
+                    )
+                    .foregroundStyle(.primary)
+
+                    Spacer()
+
+                    Image(systemName: "chevron.down")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(showsMoreOptions ? 180 : 0))
+                }
+                .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(
+                showsMoreOptions
+                    ? String(localized: "Hides optional medication details")
+                    : String(localized: "Shows notes, supply tracking, reminder preferences and colour")
+            )
+        }
+    }
+
+    private var notesSection: some View {
+        Section(String(localized: "Details")) {
+            TextField(String(localized: "Notes (e.g. take with food)"), text: $draft.notes)
         }
     }
 
@@ -274,6 +353,14 @@ struct MedicationEditor: View {
             }
             .padding(.vertical, 6)
         }
+    }
+
+    private func daysCopy(_ count: Int) -> String {
+        count == 1 ? String(localized: "1 day") : String(localized: "\(count) days")
+    }
+
+    private func hoursCopy(_ count: Int) -> String {
+        count == 1 ? String(localized: "1 hour") : String(localized: "\(count) hours")
     }
 
     // MARK: - Time editing
@@ -361,6 +448,7 @@ private struct WeekdayPicker: View {
 private struct FrequencyPicker: View {
     @Binding var draft: MedicationDraft
     @Environment(\.dismiss) private var dismiss
+    @State private var isShowingMoreSchedules = false
 
     var body: some View {
         NavigationStack {
@@ -373,28 +461,39 @@ private struct FrequencyPicker: View {
                     }
                 }
                 Section {
-                    row(title: String(localized: "Every X hours"), isSelected: draft.kind == .everyXHours) {
-                        draft.setKind(.everyXHours)
-                    }
-                    row(title: String(localized: "Every X days"), isSelected: draft.kind == .everyXDays) {
-                        draft.setKind(.everyXDays)
-                    }
-                    row(title: String(localized: "Specific days of the week"), isSelected: draft.kind == .weekdays) {
+                    row(title: String(localized: "Specific days"), isSelected: draft.kind == .weekdays) {
                         draft.setKind(.weekdays)
                     }
-                    row(title: String(localized: "Every month"), isSelected: draft.kind == .monthly) {
-                        draft.setKind(.monthly)
+                    row(title: String(localized: "Every few hours"), isSelected: draft.kind == .everyXHours) {
+                        draft.setKind(.everyXHours)
                     }
-                    row(title: String(localized: "Recurring cycle (days on / off)"), isSelected: draft.kind == .cycle) {
-                        draft.setKind(.cycle)
+                    Button {
+                        isShowingMoreSchedules = true
+                        Haptics.select()
+                    } label: {
+                        HStack {
+                            Text(String(localized: "More schedules…"))
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 56)
+                        .contentShape(.rect)
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            .navigationTitle(String(localized: "Frequency"))
+            .navigationTitle(String(localized: "How often do you take it?"))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(String(localized: "Done")) { dismiss() }
+            .navigationDestination(isPresented: $isShowingMoreSchedules) {
+                MoreSchedulesPicker(selectedKind: draft.kind) { kind in
+                    withAnimation(.smooth(duration: 0.2)) {
+                        draft.setKind(kind)
+                    }
+                    Haptics.select()
+                    dismiss()
                 }
             }
         }
@@ -424,8 +523,93 @@ private struct FrequencyPicker: View {
                         .foregroundStyle(Theme.accent)
                 }
             }
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .contentShape(.rect)
         }
+        .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// The uncommon scheduling patterns stay available, but never obscure the
+/// everyday choices. This is depth without a separate "advanced mode".
+private struct MoreSchedulesPicker: View {
+    let selectedKind: ScheduleKind
+    let onSelect: (ScheduleKind) -> Void
+
+    var body: some View {
+        List {
+            choice(String(localized: "Every few days"), kind: .everyXDays)
+            choice(String(localized: "Every month"), kind: .monthly)
+            choice(String(localized: "Recurring cycle (days on / off)"), kind: .cycle)
+        }
+        .navigationTitle(String(localized: "More schedules"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func choice(_ title: String, kind: ScheduleKind) -> some View {
+        Button {
+            onSelect(kind)
+        } label: {
+            HStack {
+                Text(title)
+                    .foregroundStyle(.primary)
+                Spacer()
+                if selectedKind == kind {
+                    Image(systemName: "checkmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Theme.accent)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selectedKind == kind ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// A standard, full-width row for an editor value that opens a more focused
+/// configuration step. The chevron belongs to navigation; the value stays
+/// quiet until the user asks to change it.
+private struct EditorSummaryRow: View {
+    let label: String
+    let value: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(label)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        chevron
+                    }
+                    Text(value)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    Text(label)
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 12)
+                    Text(value)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                    chevron
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 52)
+        .contentShape(.rect)
+    }
+
+    private var chevron: some View {
+        Image(systemName: "chevron.right")
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.tertiary)
     }
 }
 
