@@ -15,7 +15,10 @@ final class TodayModel {
     private let calendar: Calendar
 
     private(set) var day = DayPlan.empty
-    private(set) var weekProgress: [WeekDay] = []
+    /// Three weeks — previous, current, next — so the week strip can page
+    /// sideways with native physics and never hit a hard edge. Index 1 is
+    /// always the week containing `selectedDay`.
+    private(set) var weekWindow: [[WeekDay]] = []
     private(set) var tomorrow: [ResolvedDose] = []
     private(set) var lowSupply: [MedicationSnapshot] = []
     private(set) var isEmpty = true
@@ -43,13 +46,16 @@ final class TodayModel {
         let snapshots = store.snapshots()
         isEmpty = snapshots.isEmpty
 
-        // One fetch covers the selected day, the surrounding week and tomorrow.
+        // One fetch covers the selected day, the three paged weeks and
+        // tomorrow — the pager renders the neighbours before a swipe starts,
+        // so their data must already be here.
         let weekStart = calendar.dateInterval(of: .weekOfYear, for: selectedDay)?.start ?? selectedDay
-        let lowerBound = min(calendar.startOfDay(for: selectedDay), weekStart)
+        let pagerStart = calendar.date(byAdding: .day, value: -7, to: weekStart) ?? weekStart
+        let lowerBound = min(calendar.startOfDay(for: selectedDay), pagerStart)
         let upperBound = calendar.date(
             byAdding: .day, value: 2,
             to: max(calendar.startOfDay(for: selectedDay),
-                    calendar.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart)
+                    calendar.date(byAdding: .day, value: 21, to: pagerStart) ?? pagerStart)
         ) ?? selectedDay
         let events = store.loggedEvents(from: lowerBound, to: upperBound)
 
@@ -68,16 +74,26 @@ final class TodayModel {
         )
         day = DayPlan(doses: todaysDoses)
 
-        weekProgress = (0..<7).compactMap { offset in
-            guard let date = calendar.date(byAdding: .day, value: offset, to: weekStart) else { return nil }
-            return WeekDay(
-                date: date,
-                progress: DoseCalculator.progress(on: date, medications: snapshots,
-                                                  events: events, now: now,
-                                                  window: window, calendar: calendar),
-                isToday: calendar.isDateInToday(date),
-                isSelected: calendar.isDate(date, inSameDayAs: selectedDay)
-            )
+        // Previous, current and next week. A side page marks the day that
+        // *would* be selected if the swipe landed there — the same weekday —
+        // so the selection ring travels with the gesture instead of popping
+        // in afterwards. Landing on a side page shifts `selectedDay` by a
+        // week, which rebuilds this window and recentres the pager.
+        weekWindow = (-1...1).map { page in
+            guard let base = calendar.date(byAdding: .day, value: 7 * page, to: weekStart),
+                  let selectedInPage = calendar.date(byAdding: .day, value: 7 * page, to: selectedDay)
+            else { return [] }
+            return (0..<7).compactMap { offset in
+                guard let date = calendar.date(byAdding: .day, value: offset, to: base) else { return nil }
+                return WeekDay(
+                    date: date,
+                    progress: DoseCalculator.progress(on: date, medications: snapshots,
+                                                      events: events, now: now,
+                                                      window: window, calendar: calendar),
+                    isToday: calendar.isDateInToday(date),
+                    isSelected: calendar.isDate(date, inSameDayAs: selectedInPage)
+                )
+            }
         }
 
         if let tomorrowDate = calendar.date(byAdding: .day, value: 1, to: now), isToday {

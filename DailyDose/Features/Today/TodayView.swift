@@ -125,9 +125,8 @@ struct TodayView: View {
             VStack(spacing: 16) {
                 header(model)
 
-                WeekStrip(days: model.weekProgress) { date in
+                WeekPager(model: model) { date in
                     withAnimation(.smooth(duration: 0.3)) { model.selectedDay = date }
-                    Haptics.select()
                 }
 
                 if notificationStatus == .notDetermined, !model.isEmpty {

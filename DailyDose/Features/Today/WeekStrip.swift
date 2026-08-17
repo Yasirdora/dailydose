@@ -60,3 +60,66 @@ struct WeekStrip: View {
         return "\(date), \(String(localized: "\(day.progress.taken) of \(day.progress.total) doses taken"))"
     }
 }
+
+// MARK: - Paging between weeks
+
+/// The week strip as an endless pager: swipe left for next week, right for
+/// the previous one.
+///
+/// Three pages — previous, current, next — rendered from `model.weekWindow`
+/// under a native page `TabView`, so the physics (drag, rubber-band, settle)
+/// are the same ones every Apple pager has. Landing on a side page shifts the
+/// selected day by exactly one week — the same weekday, the way Calendar's
+/// week view moves — and the window then silently recentres on the middle
+/// page, ready to swipe again in either direction. There is no first or last
+/// week to hit.
+struct WeekPager: View {
+    let model: TodayModel
+    var onSelect: ((Date) -> Void)? = nil
+
+    @State private var page = 1   // 0 previous · 1 current · 2 next
+
+    var body: some View {
+        TabView(selection: $page) {
+            ForEach(Array(model.weekWindow.enumerated()), id: \.offset) { index, days in
+                WeekStrip(days: days) { date in
+                    select(date)
+                }
+                .tag(index)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        // The strip's intrinsic height: weekday label + gap + ring + card
+        // padding. Page TabViews need a bound or they collapse.
+        .frame(height: 104)
+        .onChange(of: page) { _, landed in
+            guard landed != 1 else { return }
+            let delta = landed == 2 ? 7 : -7
+            withAnimation(.smooth(duration: 0.3)) {
+                if let shifted = Calendar.current.date(byAdding: .day, value: delta,
+                                                       to: model.selectedDay) {
+                    model.selectedDay = shifted
+                }
+            }
+            Haptics.select()
+        }
+        .onChange(of: model.selectedDay) { _, _ in
+            // Any day change — a tap, the return-to-today arrow, or a settled
+            // swipe — recentres the window without animation, so the user
+            // never sees the middle page swap.
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { page = 1 }
+        }
+    }
+
+    private func select(_ date: Date) {
+        if let onSelect {
+            onSelect(date)
+        } else {
+            withAnimation(.smooth(duration: 0.3)) { model.selectedDay = date }
+        }
+        Haptics.select()
+    }
+}
+
