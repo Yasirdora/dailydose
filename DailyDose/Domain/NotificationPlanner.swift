@@ -41,7 +41,11 @@ enum NotificationPlanner {
         var followUps: Int
         var refills: Int
 
-        static let `default` = Budget(doses: 52, followUps: 8, refills: 4)
+        /// Leaves four slots of headroom. `apply(_:)` deliberately preserves
+        /// user-owned snooze requests across a reschedule, so a budget that
+        /// sums to exactly 64 would silently push the total past the ceiling
+        /// the moment someone snoozes two doses.
+        static let `default` = Budget(doses: 48, followUps: 8, refills: 4)
 
         var total: Int { doses + followUps + refills }
     }

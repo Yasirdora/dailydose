@@ -236,16 +236,24 @@ actor NotificationService: NotificationScheduling {
 
     /// Re-presents a dose reminder after a delay. Owned by the user and never
     /// reconciled away by `apply(_:)`.
+    ///
+    /// Importance and sound are derived exactly as in `makeRequest`: a Gentle
+    /// medication's snooze arrives quietly, because the user said it should.
+    /// Quiet hours deliberately do NOT suppress a snooze — the user asked for
+    /// this exact nudge by tapping the button, which is a different contract
+    /// from the app's own escalations.
     func scheduleSnooze(
         medicationID: String, scheduledAt: Date, title: String, body: String,
+        importance: MedicationImportance = .standard,
         sound: NotificationSound = .default, minutes: Int = 10
     ) async {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        content.sound = sound.fileName.map { UNNotificationSound(named: UNNotificationSoundName($0)) }
+        content.sound = importance.resolvedSound(preferred: sound).fileName
+            .map { UNNotificationSound(named: UNNotificationSoundName($0)) }
         content.categoryIdentifier = Self.categoryIdentifier
-        content.interruptionLevel = .timeSensitive
+        content.interruptionLevel = importance.breaksThroughFocus ? .timeSensitive : .active
         content.userInfo = [
             NotificationPayload.medicationID: medicationID,
             NotificationPayload.scheduledAt: scheduledAt.timeIntervalSinceReferenceDate,

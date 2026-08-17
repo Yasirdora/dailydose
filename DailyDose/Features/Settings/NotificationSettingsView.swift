@@ -16,12 +16,14 @@ struct NotificationSettingsView: View {
     @State private var preferences = NotificationPreferences.default
     @State private var systemStatus: SystemStatus = .unknown
     @State private var didLoad = false
+    @Environment(\.scenePhase) private var scenePhase
 
     private enum SystemStatus { case unknown, authorized, denied, notDetermined }
 
     var body: some View {
         Form {
             if systemStatus == .denied { systemDeniedSection }
+            if systemStatus == .notDetermined { systemNotDeterminedSection }
 
             doseSection
             followUpSection
@@ -38,6 +40,13 @@ struct NotificationSettingsView: View {
             }
             await refreshSystemStatus()
         }
+        // The status can change while this screen is open — a round trip to
+        // iOS Settings must not leave a stale banner up (or a stale absence
+        // of one).
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await refreshSystemStatus() }
+        }
         .onChange(of: preferences) { _, new in
             // Persist and reschedule on every change — no Save button, the way
             // every Settings screen on the platform behaves.
@@ -47,6 +56,33 @@ struct NotificationSettingsView: View {
     }
 
     // MARK: - System permission
+
+    /// Fresh install: the screen shows a fully-configured set of reminders
+    /// that will never be delivered. The one button that fixes it belongs
+    /// here, at the top.
+    private var systemNotDeterminedSection: some View {
+        Section {
+            Button {
+                Task {
+                    _ = await environment.notificationService.requestAuthorization()
+                    await refreshSystemStatus()
+                }
+            } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(String(localized: "Allow notifications"))
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text(String(localized: "Without permission, none of the reminders below can reach you."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "bell.badge.fill").foregroundStyle(Theme.accent)
+                }
+            }
+        }
+    }
 
     private var systemDeniedSection: some View {
         Section {
@@ -75,6 +111,10 @@ struct NotificationSettingsView: View {
     private var doseSection: some View {
         Section {
             Toggle(String(localized: "Show notifications"), isOn: $preferences.doseRemindersEnabled)
+                // Two toggles on this screen share the visible label; section
+                // headers are not part of a control's VoiceOver name, so each
+                // toggle must say which one it is.
+                .accessibilityLabel(String(localized: "Dose reminders"))
 
             if preferences.doseRemindersEnabled {
                 NavigationLink {
@@ -158,6 +198,7 @@ struct NotificationSettingsView: View {
     private var refillSection: some View {
         Section {
             Toggle(String(localized: "Show notifications"), isOn: $preferences.refillAlertsEnabled)
+                .accessibilityLabel(String(localized: "Refill alerts"))
 
             if preferences.refillAlertsEnabled {
                 NavigationLink {

@@ -181,6 +181,15 @@ struct TodayView: View {
                     }
                 }
 
+                // Denied is not a healthy install: without this card the
+                // screen looks fine forever while no reminder can ever fire.
+                if notificationStatus == .denied, !model.isEmpty {
+                    NotificationDeniedCard {
+                        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                        UIApplication.shared.open(url)
+                    }
+                }
+
                 if !model.lowSupply.isEmpty {
                     RefillCard(medications: model.lowSupply)
                 }
@@ -475,6 +484,33 @@ private struct NotificationNudge: View {
                 .foregroundStyle(.secondary)
             Button(action: onEnable) {
                 Text(String(localized: "Turn On Notifications"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+            }
+            .prominentButton()
+            .controlSize(.large)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle()
+    }
+}
+
+/// The denied state, distinct from never-asked: the user said no at the
+/// system level, so the only route back is iOS Settings — say so, and take
+/// them there.
+private struct NotificationDeniedCard: View {
+    let onOpenSettings: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(String(localized: "Reminders are off"), systemImage: "bell.slash.fill")
+                .font(.headline)
+            Text(String(localized: "Notifications for Daily Dose are disabled in iOS Settings, so no dose reminder can reach you."))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button(action: onOpenSettings) {
+                Text(String(localized: "Open Settings"))
                     .font(.headline)
                     .frame(maxWidth: .infinity)
             }

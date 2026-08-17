@@ -116,7 +116,9 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         case .snooze:
             await service.scheduleSnooze(
                 medicationID: medicationID, scheduledAt: scheduledAt,
-                title: title, body: body, sound: store.preferences.doseSound
+                title: title, body: body,
+                importance: store.medication(id: medicationID)?.importance ?? .standard,
+                sound: store.preferences.doseSound
             )
 
         case nil:
