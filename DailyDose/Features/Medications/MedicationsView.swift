@@ -123,7 +123,10 @@ struct MedicationsView: View {
                 if !adding { toolbarReset += 1 }
             }
             .sheet(isPresented: $isImportingFromHealth) { HealthImportView() }
-            .task(id: medications.map(\.persistentModelID)) { recomputeNextDoses() }
+            // Recompute on every store write, not on persistentModelID: an
+            // edited schedule keeps the same ID, and the old key left
+            // "next dose" showing a time the store no longer holds.
+            .task(id: environment.store.revision) { recomputeNextDoses() }
         }
     }
 

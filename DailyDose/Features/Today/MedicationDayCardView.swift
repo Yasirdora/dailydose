@@ -412,8 +412,9 @@ private struct TimelineChip: View {
                 .monospacedDigit()
         }
         // Footnote, not caption: a dose time is information people act on,
-        // and 12pt fails older eyes. The taller padding keeps every chip a
-        // comfortable fingertip target.
+        // and 12pt fails older eyes. The 44pt frame is the hit target and the
+        // capsule grows with it — these chips are the primary way to correct
+        // a dose, for the population most likely to have tremor.
         .font(.footnote.weight(.semibold))
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
@@ -425,7 +426,8 @@ private struct TimelineChip: View {
                 Capsule().strokeBorder(tint.opacity(0.55), lineWidth: 1)
             }
         }
-        .contentShape(.capsule)
+        .frame(minHeight: 44)
+        .contentShape(.rect)
     }
 }
 

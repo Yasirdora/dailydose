@@ -144,7 +144,10 @@ struct CalendarSheet: View {
                         Circle().stroke(Theme.accent, lineWidth: 1.5).padding(-4)
                     }
                 }
-                .frame(minWidth: 34, minHeight: 34)
+                // 44pt: the primary correction control in a calendar, for the
+                // population most likely to have tremor. The ring stays its
+                // visual size; the frame carries the hit target.
+                .frame(minWidth: 44, minHeight: 44)
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)

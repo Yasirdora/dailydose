@@ -102,7 +102,8 @@ final class TodayModel {
                                                       events: events, now: now,
                                                       window: window, calendar: calendar),
                     isToday: calendar.isDateInToday(date),
-                    isSelected: calendar.isDate(date, inSameDayAs: selectedInPage)
+                    isSelected: calendar.isDate(date, inSameDayAs: selectedInPage),
+                    isFuture: calendar.startOfDay(for: date) > calendar.startOfDay(for: now)
                 )
             }
         }
@@ -304,6 +305,10 @@ struct WeekDay: Identifiable, Equatable {
     let progress: DayProgress
     let isToday: Bool
     let isSelected: Bool
+    /// A day that hasn't happened yet. The strip dims it: an empty ring and
+    /// "0 of 3 taken" would read as a fully-missed day, and a future day can
+    /// never be missed.
+    let isFuture: Bool
 
     var id: Date { date }
 }

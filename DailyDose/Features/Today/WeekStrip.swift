@@ -19,6 +19,10 @@ struct WeekStrip: View {
                             .foregroundStyle(day.isSelected ? Theme.accent : .secondary)
 
                         DayRing(progress: day.progress)
+                            // A day that hasn't happened yet is dimmed, not
+                            // emptied: an empty ring reads as "fully missed",
+                            // and a future day can never be missed.
+                            .opacity(day.isFuture ? 0.3 : 1)
                             .overlay {
                                 // Selected: a filled accent disc with the
                                 // number inverted to white — Calendar's own
@@ -54,6 +58,11 @@ struct WeekStrip: View {
         let date = day.isToday
             ? String(localized: "Today")
             : day.date.formatted(.dateTime.weekday(.wide).day().month(.wide))
+        if day.isFuture {
+            return day.progress.total > 0
+                ? "\(date), \(String(localized: "\(day.progress.total) doses scheduled, upcoming"))"
+                : "\(date), \(String(localized: "upcoming"))"
+        }
         guard day.progress.total > 0 else {
             return "\(date), \(String(localized: "nothing scheduled"))"
         }

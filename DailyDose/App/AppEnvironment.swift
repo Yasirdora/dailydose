@@ -27,10 +27,12 @@ final class AppEnvironment {
         case degraded(reason: String)
     }
 
-    let container: ModelContainer
-    let store: DoseStore
     let notificationService: NotificationService
-    let coordinator: NotificationCoordinator
+    // Reassigned by startFresh(): recovery rebuilds the whole stack in place
+    // rather than asking the user to force-quit a medication app.
+    private(set) var container: ModelContainer
+    private(set) var store: DoseStore
+    private(set) var coordinator: NotificationCoordinator
     private(set) var status: Status
 
     init() {
@@ -56,11 +58,12 @@ final class AppEnvironment {
         }
 
         let service = NotificationService()
+        let doseStore = DoseStore(context: container.mainContext, notifications: service)
         self.container = container
         self.status = status
         self.notificationService = service
-        self.store = DoseStore(context: container.mainContext, notifications: service)
-        self.coordinator = NotificationCoordinator(store: store, service: service)
+        self.store = doseStore
+        self.coordinator = NotificationCoordinator(store: doseStore, service: service)
     }
 
     /// Everything that must happen once, at launch.
@@ -173,6 +176,48 @@ final class AppEnvironment {
         guard case .ready = status else { return }
         store.recordMissedDoses()
         await store.rescheduleNotifications()
+    }
+
+    /// Recovery's last resort, made honest.
+    ///
+    /// The degraded state runs on an in-memory scratch store, so the old
+    /// "Start Fresh" wiped *that* — nothing — and left the user on the same
+    /// error screen, having confirmed "your medications and history will be
+    /// cleared". This actually does it: removes the on-disk store and its
+    /// journals, rebuilds the whole stack, and boots into a clean, empty
+    /// library. Only reachable from the degraded state.
+    func startFresh() {
+        guard case .degraded = status else { return }
+
+        let schema = Schema(versionedSchema: DailyDoseSchemaV3.self)
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+
+        // The scratch container holds no file handle, so the corrupt store can
+        // be removed from under it. The journals go with it — leaving them
+        // behind would reopen the same corruption.
+        let url = configuration.url
+        for suffix in ["", "-wal", "-shm"] {
+            try? FileManager.default.removeItem(
+                at: URL(fileURLWithPath: url.path + suffix)
+            )
+        }
+
+        do {
+            let rebuilt = try ModelContainer(
+                for: schema,
+                migrationPlan: DailyDoseMigrationPlan.self,
+                configurations: [configuration]
+            )
+            container = rebuilt
+            store = DoseStore(context: rebuilt.mainContext, notifications: notificationService)
+            coordinator = NotificationCoordinator(store: store, service: notificationService)
+            coordinator.start()
+            status = .ready
+        } catch {
+            // The disk itself may be full or unreadable. Stay degraded and say
+            // why — the one thing we never do is pretend it worked.
+            status = .degraded(reason: error.localizedDescription)
+        }
     }
 }
 

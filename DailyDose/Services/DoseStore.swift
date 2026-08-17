@@ -43,6 +43,13 @@ final class DoseStore {
     /// Set when a write fails. Views present it; nothing is swallowed.
     var lastError: StoreError?
 
+    /// Bumped on every successful save. SwiftData's `@Query` compares model
+    /// arrays by persistent identity, so editing a schedule produces an
+    /// *equal* array and `onChange(of: medications)` never fires — the
+    /// screen keeps showing a time the store no longer holds. Observing this
+    /// counter instead makes every write a rebuild.
+    private(set) var revision = 0
+
     /// Medications whose reminders exceeded the notification budget.
     /// Surfaced in Settings so an unschedulable setup is visible, not silent.
     private(set) var deferredMedicationIDs: Set<String> = []
@@ -357,6 +364,7 @@ final class DoseStore {
         guard context.hasChanges else { return }
         do {
             try context.save()
+            revision += 1
         } catch {
             // Surfaced, never swallowed. A silent failure in a medication app
             // means someone believes they logged a dose that was never stored.

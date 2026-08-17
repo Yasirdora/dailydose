@@ -12,7 +12,7 @@ struct RootView: View {
     @State private var selection: Tab = .today
     @State private var tabBeforeScan: Tab = .today
     @State private var isScanning = false
-    @State private var deepLinkedMedicationID: String?
+    @State private var deepLink: TodayDeepLink?
 
     enum Tab: Hashable {
         case today, medications, history, scan
@@ -55,7 +55,10 @@ struct RootView: View {
         .onChange(of: environment.coordinator.pendingDeepLink) { _, link in
             guard let link else { return }
             selection = .today
-            deepLinkedMedicationID = link.medicationID
+            // The day comes along: DeepLink exists "so the app can open on
+            // the right day", and discarding it dumped a stale-banner tap
+            // onto today.
+            deepLink = TodayDeepLink(medicationID: link.medicationID, day: link.scheduledAt)
             environment.coordinator.pendingDeepLink = nil
         }
     }
@@ -66,7 +69,7 @@ struct RootView: View {
             TabView(selection: $selection) {
                 // `SwiftUI.Tab` — the nested `Tab` enum shadows the type here.
                 SwiftUI.Tab(String(localized: "Doses"), systemImage: "clock.badge.checkmark.fill", value: Tab.today) {
-                    TodayView(highlightedMedicationID: $deepLinkedMedicationID)
+                    TodayView(deepLink: $deepLink)
                 }
                 SwiftUI.Tab(String(localized: "Meds"), systemImage: "pills.fill", value: Tab.medications) {
                     MedicationsView()
@@ -84,7 +87,7 @@ struct RootView: View {
             }
         } else {
             TabView(selection: $selection) {
-                TodayView(highlightedMedicationID: $deepLinkedMedicationID)
+                TodayView(deepLink: $deepLink)
                     .tabItem { Label(String(localized: "Doses"), systemImage: "clock.badge.checkmark.fill") }
                     .tag(Tab.today)
                 MedicationsView()
@@ -108,7 +111,7 @@ struct RootView: View {
 struct RecoveryView: View {
     let reason: String
 
-    @Environment(\.doseStore) private var store
+    @Environment(AppEnvironment.self) private var environment
     @State private var isResetting = false
 
     var body: some View {
@@ -142,7 +145,11 @@ struct RecoveryView: View {
                 titleVisibility: .visible
             ) {
                 Button(String(localized: "Start Fresh"), role: .destructive) {
-                    store?.deleteAllData()
+                    // Actually rebuilds — in the degraded state the store is
+                    // an in-memory scratch, so wiping it would clear nothing
+                    // and land the user back on this screen.
+                    environment.startFresh()
+                    Haptics.warning()
                 }
                 Button(String(localized: "Cancel"), role: .cancel) {}
             } message: {

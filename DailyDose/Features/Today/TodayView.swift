@@ -2,16 +2,22 @@ import SwiftUI
 import SwiftData
 import UserNotifications
 
+/// A tap on a reminder banner, delivered into the Doses tab.
+///
+/// Carries the day as well as the medication: a banner tapped from the
+/// Lock Screen refers to the dose it was delivered for, and the app should
+/// open on that day — not dump the user on today with no context.
+struct TodayDeepLink: Equatable {
+    let medicationID: String
+    let day: Date?
+}
+
 struct TodayView: View {
-    @Binding var highlightedMedicationID: String?
+    @Binding var deepLink: TodayDeepLink?
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// Re-fetched by the model, but observed here so SwiftData change
-    /// notifications drive a rebuild without polling.
-    @Query private var medications: [Medication]
 
     @State private var model: TodayModel?
     @State private var toast: Toast?
@@ -71,13 +77,18 @@ struct TodayView: View {
             }
         }
         .task { start() }
+        .onChange(of: deepLink) { _, link in apply(link) }
         .onReceive(ticker) { model?.rebuild(now: $0) }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             model?.rebuild()
             Task { notificationStatus = await environment.notificationService.authorizationStatus() }
         }
-        .onChange(of: medications) { _, _ in model?.rebuild() }
+        // A store revision, not the model array: SwiftData compares by
+        // persistent identity, so an edited schedule produces an *equal*
+        // array and the screen would keep showing a time the store no
+        // longer holds. Every write bumps the revision; every bump rebuilds.
+        .onChange(of: environment.store.revision) { _, _ in model?.rebuild() }
         .sheet(item: $route) { route in
             switch route {
             case .calendar:
@@ -129,7 +140,23 @@ struct TodayView: View {
             model = TodayModel(store: environment.store)
         }
         model?.rebuild()
+        apply(deepLink)
         Task { notificationStatus = await environment.notificationService.authorizationStatus() }
+    }
+
+    /// Opens the linked day and lets the ring glow briefly, then clears it.
+    /// A highlight that never clears makes the *next* deep link
+    /// indistinguishable from this one.
+    private func apply(_ link: TodayDeepLink?) {
+        guard let link, let model else { return }
+        if let day = link.day {
+            model.selectedDay = day
+            model.rebuild()
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            if deepLink == link { deepLink = nil }
+        }
     }
 
     // MARK: - Content
@@ -248,7 +275,7 @@ struct TodayView: View {
         ForEach(cards) { card in
             MedicationDayCardView(
                 card: card,
-                isHighlighted: card.medication.id == highlightedMedicationID,
+                isHighlighted: card.medication.id == deepLink?.medicationID,
                 now: model.now,
                 window: model.window,
                 onLog: { log($0, as: $1) },
