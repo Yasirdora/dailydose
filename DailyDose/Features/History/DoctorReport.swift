@@ -60,9 +60,17 @@ enum DoctorReport {
         try UIGraphicsPDFRenderer(bounds: pageRect, format: format).writePDF(to: url) { context in
             for page in pages {
                 context.beginPage()
+                // ImageRenderer draws in SwiftUI's top-left space; a PDF page
+                // is bottom-left. Flip the context or every page prints
+                // upside down.
+                let cg = context.cgContext
+                cg.saveGState()
+                cg.translateBy(x: 0, y: pageSize.height)
+                cg.scaleBy(x: 1, y: -1)
                 ImageRenderer(content: page.environment(\.colorScheme, .light)).render { _, draw in
-                    draw(context.cgContext)
+                    draw(cg)
                 }
+                cg.restoreGState()
             }
         }
         return url
