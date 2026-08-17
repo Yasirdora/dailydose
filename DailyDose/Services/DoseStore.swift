@@ -168,10 +168,16 @@ final class DoseStore {
     /// Writes `.missed` for doses whose window closed unlogged, so history stays
     /// honest even when the app wasn't opened for days.
     ///
+    /// The lookback must cover the longest report the app can produce — 30
+    /// days. Anything shorter silently inflates adherence: adherence is
+    /// counted from recorded events, so an unlogged dose older than the sweep
+    /// never enters the denominator at all, and a month report would show
+    /// 100% for three weeks that were simply never swept.
+    ///
     /// Safe by construction now: `DoseSchedule` cannot produce an occurrence
     /// before its own `startDate`, so this can never invent misses for a
     /// medication that did not yet exist.
-    func recordMissedDoses(now: Date = .now, lookbackDays: Int = 7) {
+    func recordMissedDoses(now: Date = .now, lookbackDays: Int = 30) {
         let snapshots = self.snapshots()
         guard !snapshots.isEmpty,
               let from = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: now)

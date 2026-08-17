@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import DailyDose
 
@@ -77,5 +78,47 @@ struct DoctorReportPaginationTests {
         #expect(week != month,
                 "Two reports of different periods must never overwrite each other")
         #expect(month.hasSuffix(".pdf"))
+    }
+}
+
+/// H9: adherence is counted from recorded events, so an unlogged dose only
+/// enters the denominator once the sweep has written `.missed` for it. A
+/// 7-day sweep made a 30-day report silently inflate: three weeks of
+/// unlogged doses simply never existed as far as the numbers were concerned.
+@Suite("H9: the missed sweep covers the longest report")
+struct MissedSweepTests {
+
+    @Test("Unlogged doses from three weeks ago still count as missed")
+    @MainActor
+    func sweepCoversTheWholeMonth() async throws {
+        let container = try ModelContainer(
+            for: Schema([Medication.self, DoseEvent.self]),
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let store = DoseStore(context: container.mainContext, notifications: NullScheduler())
+        let calendar = Fixture.calendar()
+        let now = Fixture.date(2026, 8, 26, 12)
+
+        let schedule = Fixture.schedule(
+            kind: .daily, times: [Fixture.time(8)], start: Fixture.date(2026, 8, 1)
+        )
+        _ = store.add(name: "Metformin", doseDetail: "500 mg", notes: "",
+                      colorName: "teal", schedule: schedule,
+                      pillsRemaining: nil, refillThreshold: nil)
+
+        store.recordMissedDoses(now: now)
+
+        let since = calendar.date(byAdding: .day, value: -30, to: now)!
+        let missed = store.adherenceRecords(since: since).filter { $0.status == .missed }
+
+        #expect(missed.count == 26, "1 August through 26 August, one dose a day")
+        #expect(missed.contains { $0.scheduledAt == Fixture.date(2026, 8, 10, 8, 0) },
+                "A 7-day sweep would never record this dose; the month report must")
+
+        // add() spawned an unstructured reschedule Task; awaiting here lets it
+        // run while the container is alive. If it fires after the container is
+        // gone, SwiftData traps — that was the test bug, not the app's.
+        await store.rescheduleNotifications()
+        _ = container
     }
 }
