@@ -168,6 +168,31 @@ struct DoseScheduleTests {
             calendar: calendar
         )
         #expect(occurrences.count == 1, "A repeated wall-clock hour must not double the dose")
+
+        // Whichever of the two absolute instants the resolver picks, a log at
+        // either one must match: wall-clock matching keys both to the same
+        // "2026-10-25|02:30", so the read path never loses the user's record
+        // to the ambiguity.
+        let chosen = occurrences[0]
+        #expect(calendar.component(.hour, from: chosen) == 2)
+        #expect(calendar.component(.minute, from: chosen) == 30)
+        let otherInstant = chosen.addingTimeInterval(3600)
+        let index = LoggedEventIndex([("m", otherInstant, .taken)], calendar: calendar)
+        #expect(index.status(medicationID: "m", scheduledAt: chosen) == .taken)
+    }
+
+    @Test("An interval schedule survives the spring-forward transition")
+    func intervalSurvivesSpringForward() {
+        // The autumn test alone survives even a seconds-based day count — the
+        // 25-hour day errs in the direction it tolerates. March is the
+        // direction that catches a drift: CET jumps on 29 March 2026.
+        let start = Fixture.date(2026, 3, 25)
+        let schedule = Fixture.schedule(kind: .everyXDays, start: start, intervalDays: 2)
+
+        #expect(schedule.occurs(on: Fixture.date(2026, 3, 27), calendar: calendar))
+        #expect(schedule.occurs(on: Fixture.date(2026, 3, 29), calendar: calendar))
+        #expect(schedule.occurs(on: Fixture.date(2026, 3, 31), calendar: calendar))
+        #expect(schedule.occurs(on: Fixture.date(2026, 3, 30), calendar: calendar) == false)
     }
 
     // MARK: - Next occurrence

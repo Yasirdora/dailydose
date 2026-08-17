@@ -17,9 +17,11 @@ struct DayPlanCardsTests {
     }
 
     private func dose(_ medication: MedicationSnapshot, hour: Int, state: DoseState) -> ResolvedDose {
-        // Same-day fixtures keep `needsAction` (calendar "today") stable.
+        // Wall-clock hours, not start-of-day plus absolute hours: on the two
+        // DST transition days the day is 23 or 25 hours long and the fixtures
+        // drift an hour off the asserted clock times.
         let day = calendar.startOfDay(for: .now)
-        let at = calendar.date(byAdding: .hour, value: hour, to: day)!
+        let at = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day)!
         return ResolvedDose(
             dose: Dose(medicationID: medication.id, scheduledAt: at, state: state),
             medication: medication
@@ -102,7 +104,9 @@ struct MissedDefinitionTests {
     private let calendar = Fixture.calendar()
 
     private func resolved(day: Date, hour: Int, state: DoseState) -> ResolvedDose {
-        let at = calendar.date(byAdding: .hour, value: hour, to: calendar.startOfDay(for: day))!
+        // bySettingHour, not byAdding: absolute hour arithmetic drifts on the
+        // 23- and 25-hour DST days.
+        let at = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day)!
         return ResolvedDose(
             dose: Dose(medicationID: "m", scheduledAt: at, state: state),
             medication: Fixture.medication(schedule: Fixture.schedule(start: Fixture.date(2026, 1, 1)))

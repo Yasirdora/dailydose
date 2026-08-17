@@ -42,8 +42,9 @@ struct DeleteAllDataTests {
         try context.save()
 
         store.deleteAllData()
-        // Give the reschedule task a chance to run while everything is alive.
-        try? await Task.sleep(for: .milliseconds(100))
+        // Wait on the signal, not a clock: the reschedule task must finish
+        // while the store and container are still alive.
+        await store.rescheduleNotifications()
 
         #expect(try context.fetchCount(FetchDescriptor<Medication>()) == 0)
         #expect(try context.fetchCount(FetchDescriptor<DoseEvent>()) == 0)
