@@ -78,7 +78,7 @@ enum Fixture {
 /// A notification centre that does nothing — store tests never touch the
 /// system, they only need the dependency filled.
 struct NullScheduler: NotificationScheduling {
-    func apply(_ plan: NotificationPlanner.Plan) async {}
+    func apply(_ plan: NotificationPlanner.Plan) async -> [String] { [] }
     func authorizationStatus() async -> UNAuthorizationStatus { .authorized }
     func requestAuthorization() async -> Bool { true }
 }

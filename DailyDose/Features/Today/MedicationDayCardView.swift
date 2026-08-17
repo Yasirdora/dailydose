@@ -29,7 +29,12 @@ struct MedicationDayCardView: View {
     /// before the log is written, so the feedback lands *before* the card
     /// moves to the Done section — not after, when the user is no longer
     /// looking.
-    @State private var isConfirmingTaken = false
+    ///
+    /// Keyed to the dose, not a bare flag, and always cleared after the log.
+    /// A bare Bool here once disabled both buttons permanently: logging the
+    /// 08:00 dose advanced the card to the 12:00 dose, SwiftUI reused the
+    /// view with its @State intact, and the noon dose could never be logged.
+    @State private var confirmingDoseID: String?
 
     private var actionable: ResolvedDose? { card.actionable }
 
@@ -256,35 +261,39 @@ struct MedicationDayCardView: View {
                     .font(.subheadline.weight(.semibold))
             }
             .secondaryButton()
-            .disabled(isConfirmingTaken)
+            .disabled(confirmingDoseID != nil)
 
             Button { confirmTaken(dose) } label: {
+                let confirming = confirmingDoseID == dose.id
                 ZStack {
                     Text(String(localized: "Taken"))
-                        .opacity(isConfirmingTaken ? 0 : 1)
+                        .opacity(confirming ? 0 : 1)
                     Image(systemName: "checkmark")
                         .font(.subheadline.weight(.bold))
-                        .opacity(isConfirmingTaken ? 1 : 0)
-                        .scaleEffect(isConfirmingTaken ? 1 : 0.4)
+                        .opacity(confirming ? 1 : 0)
+                        .scaleEffect(confirming ? 1 : 0.4)
                 }
                 .font(.subheadline.weight(.semibold))
                 .frame(minWidth: 64)
             }
             .prominentButton()
             .tint(Theme.taken)
-            .disabled(isConfirmingTaken)
+            .disabled(confirmingDoseID != nil)
         }
     }
 
     private func confirmTaken(_ dose: ResolvedDose) {
-        guard !isConfirmingTaken else { return }
+        guard confirmingDoseID == nil else { return }
         Haptics.success()
         withAnimation(reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.5)) {
-            isConfirmingTaken = true
+            confirmingDoseID = dose.id
         }
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(600))
             onLog(dose, .taken)
+            // Always released — even if the card is reused for the next dose,
+            // that dose's buttons must answer.
+            confirmingDoseID = nil
         }
     }
 

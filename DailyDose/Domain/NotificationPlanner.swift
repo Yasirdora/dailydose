@@ -90,6 +90,17 @@ enum NotificationPlanner {
             if case .refill = category { return false }
             return true
         }
+
+        /// Every medication this notification speaks for, whatever its shape —
+        /// so a failed add can mark the right medications as deferred.
+        var medicationIDs: [String] {
+            switch category {
+            case .dose(let id, _): [id]
+            case .doseBundle(let ids, _): ids
+            case .followUp(let id, _): [id]
+            case .refill(let id): [id]
+            }
+        }
     }
 
     struct Plan: Equatable, Sendable {

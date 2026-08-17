@@ -212,7 +212,7 @@ struct SettingsView: View {
                     Task {
                         await environment.notificationService.requestAuthorization()
                         notificationStatus = await environment.notificationService.authorizationStatus()
-                        store?.rescheduleNotifications()
+                        await store?.rescheduleNotifications()
                     }
                 }
             }

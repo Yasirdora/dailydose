@@ -41,7 +41,18 @@ final class TodayModel {
 
     /// Recomputes the whole screen. Cheap enough to call on every tick because
     /// the event index is fetched for a bounded window and consulted in O(1).
+    ///
+    /// Follows the clock across midnight: if the user was looking at "today"
+    /// and the day has since turned, the screen turns with it. A user who
+    /// logged their 23:55 bedtime dose and picks the phone up at 00:10 must
+    /// see *today's* doses — logging against yesterday's card would write a
+    /// record for a day that no longer exists. A deliberately chosen past or
+    /// future day is never yanked away.
     func rebuild(now: Date = .now) {
+        if calendar.isDate(selectedDay, inSameDayAs: self.now),
+           !calendar.isDate(selectedDay, inSameDayAs: now) {
+            selectedDay = now
+        }
         self.now = now
         let snapshots = store.snapshots()
         isEmpty = snapshots.isEmpty
@@ -110,6 +121,9 @@ final class TodayModel {
 
     private func rebuildIfDayChanged(_ oldValue: Date) {
         guard !calendar.isDate(oldValue, inSameDayAs: selectedDay) else { return }
+        // Rebuild against the model's own clock, not a fresh `now`: a didSet
+        // fired by the midnight rollover would otherwise re-enter rebuild with
+        // a different timebase and re-advance the day it just advanced.
         rebuild(now: now)
     }
 
@@ -118,12 +132,14 @@ final class TodayModel {
     func log(_ dose: ResolvedDose, as status: DoseStatus, at loggedAt: Date? = nil) {
         store.log(medicationID: dose.medication.id, scheduledAt: dose.scheduledAt,
                   status: status, loggedAt: loggedAt ?? .now)
-        rebuild(now: now)
+        // Fresh clock, not self.now — a stale `now` once meant midnight never
+        // turned the page after a late-evening log.
+        rebuild()
     }
 
     func undo(_ dose: ResolvedDose) {
         store.undoLog(medicationID: dose.medication.id, scheduledAt: dose.scheduledAt)
-        rebuild(now: now)
+        rebuild()
     }
 
     func goToToday() {

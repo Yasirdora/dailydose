@@ -134,7 +134,7 @@ struct TodayView: View {
                         Task {
                             await environment.notificationService.requestAuthorization()
                             notificationStatus = await environment.notificationService.authorizationStatus()
-                            environment.store.rescheduleNotifications()
+                            await environment.store.rescheduleNotifications()
                         }
                     }
                 }

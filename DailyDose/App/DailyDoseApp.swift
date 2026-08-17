@@ -30,7 +30,7 @@ struct DailyDoseApp: App {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
-                environment.refresh()
+                Task { await environment.refresh() }
             case .background:
                 scheduleBackgroundRefresh()
             default:
@@ -38,7 +38,10 @@ struct DailyDoseApp: App {
             }
         }
         .backgroundTask(.appRefresh(Self.refreshTaskIdentifier)) {
-            await MainActor.run { environment.refresh() }
+            // Awaited to the end of the reconcile: the system may suspend the
+            // process the moment this closure returns, and a half-written
+            // notification plan is a missed medication with no error message.
+            await environment.refresh()
             scheduleBackgroundRefresh()
         }
     }

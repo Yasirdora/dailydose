@@ -307,9 +307,19 @@ final class DoseStore {
     ///
     /// Called after every mutation, on launch, on foreground, and from the
     /// background refresh task. Idempotent and cheap: the planner is pure, and
-    /// the service diffs against what is already pending rather than tearing
-    /// everything down and rebuilding it.
+    /// the service reconciles add-first, so a rebuild can never leave the user
+    /// with fewer reminders than before.
+    ///
+    /// The sync form is for UI call sites, where suspension cannot strand the
+    /// work. The background refresh path must use `rescheduleNotifications()`
+    /// in its awaited form — an un-awaited Task there lets iOS suspend the app
+    /// with the reconcile half-done.
     func rescheduleNotifications() {
+        Task { await rescheduleNotifications() }
+    }
+
+    /// The awaitable form, for the background refresh task.
+    func rescheduleNotifications() async {
         let snapshots = self.snapshots()
         let now = Date.now
         let window = Calendar.current.date(byAdding: .day, value: -1, to: now) ?? now
@@ -317,13 +327,17 @@ final class DoseStore {
         let index = loggedEvents(from: window, to: horizon)
 
         let preferences = self.preferences
-        Task { [notifications] in
-            let plan = NotificationPlanner.plan(
-                medications: snapshots, events: index, now: now, preferences: preferences
-            )
-            await notifications.apply(plan)
-            await MainActor.run { self.deferredMedicationIDs = plan.deferredMedicationIDs }
-        }
+        let plan = NotificationPlanner.plan(
+            medications: snapshots, events: index, now: now, preferences: preferences
+        )
+        let failedRequestIDs = Set(await notifications.apply(plan))
+        // A request the system refused counts as deferred: the user must be
+        // able to see which medications are currently unreminded.
+        let failedMedicationIDs = plan.notifications
+            .filter { failedRequestIDs.contains($0.id) }
+            .flatMap(\.medicationIDs)
+        self.deferredMedicationIDs = plan.deferredMedicationIDs
+            .union(failedMedicationIDs)
     }
 
     // MARK: - Persistence

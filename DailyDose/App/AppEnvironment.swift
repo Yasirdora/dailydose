@@ -67,7 +67,7 @@ final class AppEnvironment {
     func bootstrap() {
         coordinator.start()
         seedDemoDataIfRequested()
-        refresh()
+        Task { await refresh() }
     }
 
     /// Seeds a small demo library when launched with `-seedDemo`.
@@ -165,10 +165,14 @@ final class AppEnvironment {
     /// Rescheduling here is the fix for reminders going stale: the plan is now
     /// rebuilt on every foreground, not only when the user happens to edit a
     /// medication.
-    func refresh() {
+    ///
+    /// Awaited, so a background refresh only completes when the reconcile has
+    /// actually finished — returning early lets iOS suspend the process with
+    /// the notification plan half-written.
+    func refresh() async {
         guard case .ready = status else { return }
         store.recordMissedDoses()
-        store.rescheduleNotifications()
+        await store.rescheduleNotifications()
     }
 }
 

@@ -3,7 +3,9 @@ import UserNotifications
 
 /// Abstracts the notification centre so `DoseStore` can be tested without one.
 protocol NotificationScheduling: Sendable {
-    func apply(_ plan: NotificationPlanner.Plan) async
+    /// Applies the plan, returning the identifiers of any requests the system
+    /// refused. Callers must not assume silence means success.
+    @discardableResult func apply(_ plan: NotificationPlanner.Plan) async -> [String]
     func authorizationStatus() async -> UNAuthorizationStatus
     @discardableResult func requestAuthorization() async -> Bool
 }
@@ -77,32 +79,55 @@ actor NotificationService: NotificationScheduling {
 
     /// Rebuilds pending requests from the plan.
     ///
-    /// Removes and re-adds rather than diffing by identifier. A diff keeps any
-    /// request whose id is already pending — and repeating triggers keep the
-    /// same id forever, so a changed tone, a changed importance or a fixed
-    /// interruption level would *never* reach an already-scheduled reminder.
-    /// That is exactly how every standard reminder stayed silent: scheduled
-    /// once with `.passive`, then preserved by the diff on every rebuild.
+    /// Adds rather than diffing by identifier. A diff keeps any request whose
+    /// id is already pending — and repeating triggers keep the same id forever,
+    /// so a changed tone, a changed importance or a fixed interruption level
+    /// would *never* reach an already-scheduled reminder. That is exactly how
+    /// every standard reminder stayed silent: scheduled once with `.passive`,
+    /// then preserved by the diff on every rebuild. Re-adding under an
+    /// identifier that is already pending *replaces* it in place, so fresh
+    /// content always lands.
+    /// Re-adding costs nothing the user can perceive: a request added under an
+    /// identifier that is already pending *replaces* it in place, and the plan
+    /// is at most 64 requests. Snooze requests are the user's own and are
+    /// neither replaced nor removed here.
     ///
-    /// Re-adding costs nothing the user can perceive: a calendar trigger
-    /// rebuilt from the same components fires at the same instants, and the
-    /// plan is at most 64 requests. Snooze requests are the user's own and are
-    /// left untouched.
-    func apply(_ plan: NotificationPlanner.Plan) async {
-        guard await authorizationStatus() != .denied else { return }
+    /// The order is add-first, remove-stale-second — never the reverse. This
+    /// runs inside a background refresh task, where the system may suspend the
+    /// process at any suspension point; a remove-first pass that got suspended
+    /// in the middle left the user with fewer reminders, or none, without any
+    /// visible error. Worst case here: a stale request survives until the next
+    /// refresh, which is an annoyance — not a missed medication.
+    ///
+    /// Returns the identifiers of requests the system refused to add, so the
+    /// store can surface them as deferred instead of pretending they exist.
+    @discardableResult
+    func apply(_ plan: NotificationPlanner.Plan) async -> [String] {
+        guard await authorizationStatus() != .denied else { return [] }
 
         let pending = await center.pendingNotificationRequests()
-        let removable = pending
-            .map(\.identifier)
-            .filter { !$0.hasPrefix(Self.snoozePrefix) }
-        if !removable.isEmpty {
-            center.removePendingNotificationRequests(withIdentifiers: removable)
+
+        var failed: [String] = []
+        for planned in plan.notifications {
+            guard let request = makeRequest(planned) else {
+                failed.append(planned.id)
+                continue
+            }
+            do {
+                try await center.add(request)
+            } catch {
+                failed.append(planned.id)
+            }
         }
 
-        for planned in plan.notifications {
-            guard let request = makeRequest(planned) else { continue }
-            try? await center.add(request)
+        let wanted = Set(plan.notifications.map(\.id))
+        let stale = pending
+            .map(\.identifier)
+            .filter { !$0.hasPrefix(Self.snoozePrefix) && !wanted.contains($0) }
+        if !stale.isEmpty {
+            center.removePendingNotificationRequests(withIdentifiers: stale)
         }
+        return failed
     }
 
     private func makeRequest(_ planned: NotificationPlanner.PlannedNotification) -> UNNotificationRequest? {
