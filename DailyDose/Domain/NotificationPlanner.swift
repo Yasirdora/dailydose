@@ -159,13 +159,21 @@ enum NotificationPlanner {
         deferred: inout Set<String>
     ) -> [PlannedNotification] {
 
-        /// A schedule qualifies for repeating triggers only if it runs forever.
+        /// A schedule qualifies for repeating triggers only if it runs forever
+        /// and has already begun.
+        ///
         /// A finite course expressed as "every Tuesday, repeating" would keep
         /// firing months after the prescription ended — worse than no reminder,
-        /// because the user would stop trusting the ones that are real.
+        /// because the user would stop trusting the ones that are real. And a
+        /// repeating trigger has no notion of a start date: "daily at 08:00"
+        /// fires tomorrow morning even when the prescription starts next month,
+        /// reminding the user to take a medicine they don't have yet.
+        /// Both cases go through the projected one-shot path, whose
+        /// `occurrences(from:to:)` honours the bounds exactly.
         func repeatingCost(_ medication: MedicationSnapshot) -> Int? {
             let schedule = medication.schedule
             guard schedule.endDate == nil else { return nil }
+            guard schedule.startDate <= now else { return nil }
             switch schedule.kind {
             case .daily:
                 return schedule.times.count
@@ -230,7 +238,12 @@ enum NotificationPlanner {
                 scheduledIDs.formUnion(slot.medications.map(\.id))
             }
             for medication in projected where !scheduledIDs.contains(medication.id) {
-                if medication.schedule.nextOccurrence(after: now, calendar: calendar) != nil {
+                // Deferred means "a dose inside the planning horizon got no
+                // notification". A medication whose next dose lies beyond the
+                // horizon — a future start date, say — isn't being starved; it
+                // simply isn't due yet, and the next reschedule will reach it.
+                if let next = medication.schedule.nextOccurrence(after: now, calendar: calendar),
+                   next < horizonEnd {
                     deferred.insert(medication.id)
                 }
             }

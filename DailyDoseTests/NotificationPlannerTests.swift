@@ -214,6 +214,72 @@ struct NotificationPlannerTests {
         #expect(dates.allSatisfy { $0 > now })
     }
 
+    // MARK: - Future start dates (H3)
+
+    @Test("A prescription that starts next month never reminds before then")
+    func futureStartNeverUsesRepeatingTrigger() {
+        // A repeating "daily at 08:00" trigger has no notion of a start date —
+        // it would fire tomorrow morning for a prescription that begins in
+        // October. Future-start schedules must go through the projected path,
+        // which honours the bound exactly.
+        let medication = Fixture.medication(schedule: Fixture.schedule(
+            kind: .daily, times: [Fixture.time(8)],
+            start: Fixture.date(2026, 10, 1)   // now is 12 August
+        ))
+        let doses = doseNotifications(plan([medication]))
+
+        #expect(!doses.isEmpty, "The course should still be projected within the horizon")
+        #expect(doses.allSatisfy {
+            if case .once = $0.trigger { return true }
+            return false
+        }, "A future-start schedule must not get a repeating trigger")
+        #expect(doses.allSatisfy { ($0.nextFireDate ?? .distantPast) >= Fixture.date(2026, 10, 1) },
+                "Nothing may fire before the prescription begins")
+    }
+
+    @Test("A start date beyond the horizon is waiting, not deferred")
+    func startBeyondHorizonIsNotDeferred() {
+        // "Deferred" means a dose inside the planning horizon got no slot.
+        // A medication whose first dose lies past the horizon isn't starved —
+        // the next reschedule will reach it. Flagging it would cry wolf in
+        // Settings.
+        let medication = Fixture.medication(schedule: Fixture.schedule(
+            kind: .daily, times: [Fixture.time(8)],
+            start: Fixture.date(2027, 6, 1)   // ten months past the 90-day horizon
+        ))
+        let result = plan([medication])
+
+        #expect(doseNotifications(result).isEmpty)
+        #expect(!result.deferredMedicationIDs.contains("med-1"),
+                "Nothing is due inside the horizon, so nothing was lost")
+    }
+
+    @Test("A medication starting tomorrow gets one-shots, then repeats once live")
+    func imminentStartProjectsThenRepeats() {
+        // Starting tomorrow: still future, so projected one-shots. Once the
+        // start date passes, the same schedule qualifies for the cheap
+        // repeating trigger — the boundary is the start date, not the kind.
+        let schedule = Fixture.schedule(
+            kind: .daily, times: [Fixture.time(8)],
+            start: Fixture.date(2026, 8, 13)   // tomorrow
+        )
+        let before = doseNotifications(plan([Fixture.medication(schedule: schedule)]))
+        #expect(before.allSatisfy {
+            if case .once = $0.trigger { return true }
+            return false
+        })
+        #expect(before.allSatisfy { ($0.nextFireDate ?? .distantPast) >= Fixture.date(2026, 8, 13) })
+
+        let live = NotificationPlanner.plan(
+            medications: [Fixture.medication(schedule: schedule)],
+            events: .empty, now: Fixture.date(2026, 8, 14, 7), calendar: calendar
+        )
+        let after = doseNotifications(live)
+        #expect(after.count == 1)
+        #expect(after[0].trigger == .daily(Fixture.time(8)),
+                "Once the course is live, the repeating trigger is the right one")
+    }
+
     // MARK: - Follow-ups
 
     @Test("A follow-up lands 30 minutes after an unlogged dose")
