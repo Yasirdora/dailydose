@@ -61,97 +61,101 @@ struct WeekStrip: View {
     }
 }
 
+
 // MARK: - Paging between weeks
 
-/// The week strip as an endless pager: swipe left for next week, right for
-/// the previous one.
+/// The week strip as an endless pager: drag it sideways, and the previous
+/// and next weeks are already there, riding with your finger.
 ///
-/// Built on a paging `ScrollView`, not a page `TabView`. A TabView reports
-/// its selection the moment the finger lifts — *before* the settle animation
-/// finishes — so committing the week change there cancels the animation
-/// mid-flight and the strip visibly jumps. `onScrollPhaseChange` instead
-/// tells us exactly when paging has come to rest; only then do we shift the
-/// selected day by one week (same weekday, Calendar's grammar) and silently
-/// recentre the window. The swap happens at rest, with identical content, so
-/// the eye never catches it.
+/// Neither a page `TabView` nor a paging `ScrollView` is right for this.
+/// Both decide the target page the instant the finger lifts and then play
+/// their own settle animation — if any state changes in that window (and a
+/// week commit always changes state), the animation is cancelled mid-flight
+/// and the strip jumps. This pager instead owns the whole motion:
+///
+/// · While dragging, the three strips translate 1:1 with the finger.
+/// · On release, a spring either snaps back or carries the strip fully off
+///   screen, decided by *predicted* end position, so a quick flick always
+///   turns the page and a slow drag has to earn it past halfway.
+/// · Only when the spring is logically complete does the week commit happen
+///   and the offset silently reset to zero — the swap lands on identical
+///   content at rest, which is what makes it invisible.
+///
+/// The only mutable state is the drag offset; the strips' positions are a
+/// pure function of the model's 3-week window, so rebuilds from logging or
+/// day taps can never move anything under the user's finger.
 struct WeekPager: View {
     let model: TodayModel
     var onSelect: ((Date) -> Void)? = nil
 
-    /// The week currently under the finger, identified by its first day.
-    /// Stable across rebuilds — logging a dose rewrites the rings without
-    /// moving the pager.
-    @State private var visibleWeek: Date?
-    /// True while the user is dragging or the page is still settling. A
-    /// rebuild that lands mid-gesture must not recenter — that yank is the
-    /// jerk a native pager never has.
-    @State private var isInteracting = false
+    /// Live finger translation, in points. Zero means the current week sits
+    /// centred; ±width means a neighbour fully covers it.
+    @State private var drag: CGFloat = 0
+    @State private var width: CGFloat = 0
+    /// Set while the commit spring is playing, so a second grab can't fight it.
+    @State private var isCommitting = false
+
+    private let settle = Animation.spring(duration: 0.35)
 
     var body: some View {
-        // (week start, days) pairs with stable identity across rebuilds.
         let weeks = model.weekWindow.compactMap { days -> (start: Date, days: [WeekDay])? in
             days.first.map { ($0.date, days) }
         }
 
-        ScrollView(.horizontal) {
-            HStack(spacing: 0) {
-                ForEach(weeks, id: \.start) { week in
-                    WeekStrip(days: week.days) { date in
-                        select(date)
-                    }
-                    .containerRelativeFrame(.horizontal)
+        ZStack {
+            ForEach(Array(weeks.enumerated()), id: \.element.start) { index, week in
+                WeekStrip(days: week.days) { date in
+                    select(date)
+                }
+                .frame(width: width)
+                .offset(x: CGFloat(index - 1) * width + drag)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width = $0 }
+        .gesture(dragGesture)
+    }
+
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .onChanged { value in
+                guard !isCommitting else { return }
+                drag = value.translation.width
+            }
+            .onEnded { value in
+                guard !isCommitting, width > 0 else { return }
+                let predicted = value.predictedEndTranslation.width
+                if predicted <= -width / 2 {
+                    commit(1)       // flung or dragged left → next week
+                } else if predicted >= width / 2 {
+                    commit(-1)      // right → previous week
+                } else {
+                    withAnimation(settle) { drag = 0 }
                 }
             }
-            .scrollTargetLayout()
-        }
-        .scrollTargetBehavior(.paging)
-        .scrollIndicators(.hidden)
-        .scrollPosition(id: $visibleWeek)
-        .onAppear { visibleWeek = middle(of: weeks) }
-        .modifier(ScrollSettleReporter(position: $visibleWeek) { atRest in
-            isInteracting = !atRest
-            if atRest { settle(weeks: weeks) }
-        })
-        .onChange(of: model.weekWindow) { _, _ in
-            // A rebuild that nobody asked the pager about — a dose logged, a
-            // day tapped, the calendar sheet — must never move the strip
-            // mid-gesture.
-            guard !isInteracting else { return }
-            recenter()
-        }
     }
 
-    private func middle(of weeks: [(start: Date, days: [WeekDay])]) -> Date? {
-        weeks.count == 3 ? weeks[1].start : weeks.first?.start
-    }
-
-    /// The pager has come to rest. If it rests on a side week, that week
-    /// becomes the selected one; either way the window recentres on the
-    /// middle page without animation.
-    private func settle(weeks: [(start: Date, days: [WeekDay])]) {
-        guard let visibleWeek,
-              let index = weeks.firstIndex(where: { $0.start == visibleWeek }) else {
-            recenter()
-            return
-        }
-        let delta = index - 1
-        if delta != 0,
-           let shifted = Calendar.current.date(byAdding: .day, value: 7 * delta,
-                                               to: model.selectedDay) {
-            withAnimation(.smooth(duration: 0.3)) { model.selectedDay = shifted }
+    /// Slides the strip fully aside with a spring, then — once the motion is
+    /// logically complete — shifts the selected day by a week and resets the
+    /// offset without animation. At rest, over identical content.
+    private func commit(_ direction: Int) {
+        isCommitting = true
+        withAnimation(settle, completionCriteria: .logicallyComplete) {
+            drag = direction == 1 ? -width : width
+        } completion: {
+            if let shifted = Calendar.current.date(byAdding: .day, value: 7 * direction,
+                                                   to: model.selectedDay) {
+                model.selectedDay = shifted
+            }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                drag = 0
+                isCommitting = false
+            }
             Haptics.select()
-            // The rebuild that follows triggers onChange(weekWindow), which
-            // recentres — we are idle now, so it is allowed to.
-        } else {
-            recenter()
         }
-    }
-
-    private func recenter() {
-        let middle = model.weekWindow.count == 3 ? model.weekWindow[1].first?.date : nil
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) { visibleWeek = middle }
     }
 
     private func select(_ date: Date) {
@@ -163,37 +167,3 @@ struct WeekPager: View {
         Haptics.select()
     }
 }
-
-/// Reports when a pager has genuinely come to rest.
-///
-/// iOS 18 has the honest answer — `onScrollPhaseChange` fires `.idle` only
-/// after tracking, deceleration and the settle animation have all finished.
-/// iOS 17 has no such signal, so there every change of the visible page arms
-/// a debounce; half a second of stillness counts as rest. Either way the
-/// commitment logic never runs mid-animation — committing early is exactly
-/// what makes a pager jump.
-private struct ScrollSettleReporter: ViewModifier {
-    @Binding var position: Date?
-    let onRestChange: (Bool) -> Void
-
-    @State private var debounce: Task<Void, Never>?
-
-    func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
-            content.onScrollPhaseChange { _, phase in
-                onRestChange(phase == .idle)
-            }
-        } else {
-            content.onChange(of: position) { _, _ in
-                onRestChange(false)
-                debounce?.cancel()
-                debounce = Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(500))
-                    guard !Task.isCancelled else { return }
-                    onRestChange(true)
-                }
-            }
-        }
-    }
-}
-
