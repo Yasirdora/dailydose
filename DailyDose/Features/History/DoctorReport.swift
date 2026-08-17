@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// The doctor report: one A4 PDF that turns the log into something a
+/// The doctor report: a paginated A4 PDF that turns the log into something a
 /// physician can act on.
 ///
 /// Everything on the page is measured the same way the History tab measures
@@ -35,21 +35,78 @@ enum DoctorReport {
         /// Doses taken notably late or early — the detail a doctor actually
         /// asks about. Capped; the report is a summary, not a dump.
         let timingNotes: [TimingNote]
+        /// How many notable doses exist in total, so a capped list can say
+        /// "the 20 most recent of 47" instead of implying it is complete.
+        var timingNoteCount: Int = 0
     }
 
     /// A4 at 72 dpi.
     static let pageSize = CGSize(width: 595, height: 842)
 
+    // MARK: - Pagination
+
+    /// Splits the content into page-sized chunks *before* rendering.
+    ///
+    /// The overview page has a fixed cost (header, ring, chart, footer) that
+    /// leaves room for only a handful of medication rows; beyond that, rows
+    /// used to spill past the page bounds and were silently clipped away —
+    /// the PDF simply never mentioned some medications. Chunking up front
+    /// means every row lands on a page, page numbers are true, and the
+    /// footer total is derived rather than guessed.
+    struct PageLayout {
+        /// Rows that fit on the overview beneath the chart.
+        let overviewMedications: [ReportData.MedicationRow]
+        /// Remaining rows, one slice per continuation page.
+        let medicationPages: [[ReportData.MedicationRow]]
+        /// Timing notes, one slice per page.
+        let timingPages: [[ReportData.TimingNote]]
+
+        /// Row budgets are deliberately conservative: a wrapped medication
+        /// detail line or a long note must still fit, and `.clipped()` on the
+        /// page frame is the last-resort guard, not the plan.
+        static let overviewRowBudget = 5
+        static let continuationRowBudget = 13
+        static let timingRowBudget = 14
+
+        var totalPages: Int {
+            1 + medicationPages.count + timingPages.count
+        }
+
+        init(data: ReportData) {
+            let medications = data.medications
+            overviewMedications = Array(medications.prefix(Self.overviewRowBudget))
+            medicationPages = Array(medications.dropFirst(Self.overviewRowBudget))
+                .chunked(into: Self.continuationRowBudget)
+            timingPages = data.timingNotes.chunked(into: Self.timingRowBudget)
+        }
+    }
+
     @MainActor
     static func generate(_ data: ReportData) throws -> URL {
-        var pages: [AnyView] = [AnyView(OverviewPage(data: data))]
-        if !data.timingNotes.isEmpty {
-            pages.append(AnyView(TimingPage(data: data)))
+        let layout = PageLayout(data: data)
+        let total = layout.totalPages
+
+        var pages: [AnyView] = [AnyView(OverviewPage(
+            data: data, medications: layout.overviewMedications,
+            continues: !layout.medicationPages.isEmpty,
+            page: 1, totalPages: total
+        ))]
+        for (index, chunk) in layout.medicationPages.enumerated() {
+            pages.append(AnyView(MedicationPage(
+                medications: chunk, page: index + 2, totalPages: total
+            )))
+        }
+        for (index, chunk) in layout.timingPages.enumerated() {
+            pages.append(AnyView(TimingPage(
+                notes: chunk, showsHeading: index == 0,
+                totalCount: data.timingNoteCount,
+                page: layout.medicationPages.count + index + 2, totalPages: total
+            )))
         }
 
         let pageRect = CGRect(origin: .zero, size: pageSize)
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(fileName(generatedAt: data.generatedAt))
+            .appendingPathComponent(fileName(periodDays: data.periodDays, generatedAt: data.generatedAt))
 
         let format = UIGraphicsPDFRendererFormat()
         format.documentInfo = [
@@ -60,14 +117,15 @@ enum DoctorReport {
         try UIGraphicsPDFRenderer(bounds: pageRect, format: format).writePDF(to: url) { context in
             for page in pages {
                 context.beginPage()
-                // ImageRenderer draws in SwiftUI's top-left space; a PDF page
-                // is bottom-left. Flip the context or every page prints
-                // upside down.
                 let cg = context.cgContext
                 cg.saveGState()
-                cg.translateBy(x: 0, y: pageSize.height)
-                cg.scaleBy(x: 1, y: -1)
-                ImageRenderer(content: page.environment(\.colorScheme, .light)).render { _, draw in
+                // ImageRenderer draws in SwiftUI's top-left space; a PDF page
+                // is bottom-left. Flip the context or every page prints
+                // upside down — and flip by the size the renderer actually
+                // used, not the size we hoped for.
+                ImageRenderer(content: page.environment(\.colorScheme, .light)).render { size, draw in
+                    cg.translateBy(x: 0, y: size.height)
+                    cg.scaleBy(x: 1, y: -1)
                     draw(cg)
                 }
                 cg.restoreGState()
@@ -76,9 +134,9 @@ enum DoctorReport {
         return url
     }
 
-    static func fileName(generatedAt: Date) -> String {
+    static func fileName(periodDays: Int, generatedAt: Date) -> String {
         let stamp = generatedAt.formatted(.iso8601.year().month().day().dateSeparator(.dash))
-        return "Medication-Report-\(stamp).pdf"
+        return "Medication-Report-\(periodDays)d-\(stamp).pdf"
     }
 }
 
@@ -86,6 +144,11 @@ enum DoctorReport {
 
 private struct OverviewPage: View {
     let data: DoctorReport.ReportData
+    let medications: [DoctorReport.ReportData.MedicationRow]
+    /// True when further medication rows continue on the next page.
+    let continues: Bool
+    let page: Int
+    let totalPages: Int
 
     private var periodText: String {
         let start = data.periodStart.formatted(.dateTime.day().month(.abbreviated))
@@ -100,10 +163,13 @@ private struct OverviewPage: View {
             chartSection
             medicationSection
             Spacer(minLength: 0)
-            ReportFooter(page: 1, totalPages: data.timingNotes.isEmpty ? 1 : 2)
+            ReportFooter(page: page, totalPages: totalPages)
         }
         .padding(44)
         .frame(width: DoctorReport.pageSize.width, height: DoctorReport.pageSize.height)
+        // Overflow must fail visibly in development, never silently in a
+        // report a patient hands to their doctor.
+        .clipped()
         .background(Color.white)
     }
 
@@ -209,33 +275,17 @@ private struct OverviewPage: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.black)
 
-            ForEach(data.medications) { medication in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(medication.name)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.black)
-                        if !medication.detail.isEmpty {
-                            Text(medication.detail)
-                                .font(.system(size: 10))
-                                .foregroundStyle(Color.gray)
-                        }
-                    }
-                    Spacer()
-                    Text(String(localized: "\(medication.summary.taken) of \(medication.summary.total) taken"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.gray)
-                    Text(medication.summary.percent.map { "\($0)%" } ?? "—")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(reportTint(percent: medication.summary.percent))
-                        .frame(width: 44, alignment: .trailing)
-                }
-                .padding(.vertical, 7)
+            ForEach(medications) { medication in
+                MedicationReportRow(
+                    medication: medication,
+                    showsDivider: medication.id != medications.last?.id || continues
+                )
+            }
 
-                if medication.id != data.medications.last?.id {
-                    Divider().opacity(0.4)
-                }
+            if continues {
+                Text(String(localized: "Continued on the next page"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.gray)
             }
         }
     }
@@ -250,39 +300,139 @@ private struct OverviewPage: View {
     }
 }
 
-// MARK: - Page 2: timing detail
+// MARK: - A single medication row
 
-private struct TimingPage: View {
-    let data: DoctorReport.ReportData
+private struct MedicationReportRow: View {
+    let medication: DoctorReport.ReportData.MedicationRow
+    let showsDivider: Bool
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(medication.name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.black)
+                if !medication.detail.isEmpty {
+                    Text(medication.detail)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.gray)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            Text(String(localized: "\(medication.summary.taken) of \(medication.summary.total) taken"))
+                .font(.system(size: 11))
+                .foregroundStyle(Color.gray)
+            Text(medication.summary.percent.map { "\($0)%" } ?? "—")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(tint)
+                .frame(width: 44, alignment: .trailing)
+        }
+        .padding(.vertical, 7)
+
+        if showsDivider {
+            Divider().opacity(0.4)
+        }
+    }
+
+    private var tint: Color {
+        guard let percent = medication.summary.percent else { return Color.gray }
+        switch percent {
+        case 90...: return Color(red: 0.2, green: 0.75, blue: 0.45)
+        case 70..<90: return Color(red: 0.95, green: 0.62, blue: 0.15)
+        default: return Color(red: 0.9, green: 0.3, blue: 0.25)
+        }
+    }
+}
+
+// MARK: - Continuation pages: medications
+
+private struct MedicationPage: View {
+    let medications: [DoctorReport.ReportData.MedicationRow]
+    let page: Int
+    let totalPages: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(String(localized: "Timing detail"))
+            Text(String(localized: "Per medication (continued)"))
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(Color.black)
+
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(medications) { medication in
+                    MedicationReportRow(
+                        medication: medication,
+                        showsDivider: medication.id != medications.last?.id
+                    )
+                }
+            }
+
+            Spacer(minLength: 0)
+            ReportFooter(page: page, totalPages: totalPages)
+        }
+        .padding(44)
+        .frame(width: DoctorReport.pageSize.width, height: DoctorReport.pageSize.height)
+        .clipped()
+        .background(Color.white)
+    }
+}
+
+// MARK: - Timing detail pages
+
+private struct TimingPage: View {
+    let notes: [DoctorReport.ReportData.TimingNote]
+    /// Only the first timing page carries the heading; continuation pages
+    /// keep the space for rows.
+    let showsHeading: Bool
+    /// Total notable doses before capping, for "the 20 most recent of 47".
+    let totalCount: Int
+    let page: Int
+    let totalPages: Int
+
+    private var subtitle: String {
+        if totalCount > notes.count {
+            return String(localized: "Doses taken notably earlier or later than scheduled — the \(notes.count) most recent of \(totalCount).")
+        }
+        return String(localized: "Doses taken notably earlier or later than scheduled.")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            if showsHeading {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(String(localized: "Timing detail"))
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(Color.black)
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.gray)
+                }
+            } else {
+                Text(String(localized: "Timing detail (continued)"))
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(Color.black)
-                Text(String(localized: "Doses taken notably earlier or later than scheduled."))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.gray)
             }
 
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(data.timingNotes) { note in
+                ForEach(notes) { note in
                     Text(note.text)
                         .font(.system(size: 11))
                         .foregroundStyle(Color.black)
+                        .lineLimit(2)
                         .padding(.vertical, 6)
-                    if note.id != data.timingNotes.last?.id {
+                    if note.id != notes.last?.id {
                         Divider().opacity(0.4)
                     }
                 }
             }
 
             Spacer(minLength: 0)
-            ReportFooter(page: 2, totalPages: 2)
+            ReportFooter(page: page, totalPages: totalPages)
         }
         .padding(44)
         .frame(width: DoctorReport.pageSize.width, height: DoctorReport.pageSize.height)
+        .clipped()
         .background(Color.white)
     }
 }
@@ -305,6 +455,19 @@ private struct ReportFooter: View {
                     .font(.system(size: 9))
                     .foregroundStyle(Color.gray)
             }
+        }
+    }
+}
+
+// MARK: - Chunking
+
+private extension Array {
+    /// Slices of at most `size` elements. An empty array yields no pages at
+    /// all — an empty timing section must not produce a blank page.
+    func chunked(into size: Int) -> [[Element]] {
+        guard size > 0, !isEmpty else { return [] }
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
         }
     }
 }

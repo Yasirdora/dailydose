@@ -95,36 +95,47 @@ struct HistoryView: View {
     /// Writes the visible period as an A4 PDF doctor report and hands it to
     /// the share sheet.
     ///
-    /// Every number comes from the same `AdherenceCalculator` results the
-    /// screen is rendering, so the report can never disagree with what the
-    /// user was looking at when they shared it. The timing appendix carries
-    /// the honest pair — scheduled 08:00, taken 11:40 — which is the detail
-    /// a physician actually asks about.
+    /// The numbers are recomputed from the store *at export time*, never
+    /// reused from the on-screen cache: that cache is refreshed by a
+    /// count-based key, and a dose flipped from taken to skipped changes no
+    /// count — so the PDF could have contradicted the screen it was shared
+    /// from. The timing appendix carries the honest pair — scheduled 08:00,
+    /// taken 11:40 — which is the detail a physician actually asks about.
     private func exportSummary() {
         guard let store else { return }
         let now = Date.now
         let periodStart = Calendar.current.date(byAdding: .day, value: -(period.rawValue - 1), to: Calendar.current.startOfDay(for: now)) ?? now
-        let events = allEvents.filter { $0.scheduledAt >= periodStart && $0.scheduledAt <= now }
+        let since = Calendar.current.date(byAdding: .day, value: -period.rawValue, to: now) ?? now
 
-        let timingNotes = events
-            .filter { $0.status == .taken }
-            .compactMap(timingNote(for:))
-            .sorted()
-            .prefix(20)
-            .map { DoctorReport.ReportData.TimingNote(id: $0, text: $0) }
+        let records = store.adherenceRecords(since: since)
+        let names = Dictionary(uniqueKeysWithValues: medications.map { ($0.id, $0) })
+
+        let events = allEvents
+            .filter { $0.scheduledAt >= periodStart && $0.scheduledAt <= now }
+            .sorted { $0.scheduledAt > $1.scheduledAt }
+        let notable = events.compactMap(timingNote(for:))
 
         let reportData = DoctorReport.ReportData(
             periodDays: period.rawValue,
             periodStart: periodStart,
             generatedAt: now,
-            overall: data.summary,
-            buckets: data.buckets,
-            medications: data.byMedication.map {
-                DoctorReport.ReportData.MedicationRow(
-                    id: $0.id, name: $0.name, detail: $0.detail, summary: $0.summary
-                )
-            },
-            timingNotes: timingNotes
+            overall: AdherenceCalculator.summary(records: records, days: period.rawValue, now: now),
+            buckets: AdherenceCalculator.dailyBuckets(records: records, days: period.rawValue, now: now),
+            medications: AdherenceCalculator
+                .byMedication(records: records, days: period.rawValue, now: now)
+                .compactMap { entry in
+                    guard let medication = names[entry.medicationID] else { return nil }
+                    return DoctorReport.ReportData.MedicationRow(
+                        id: entry.medicationID,
+                        name: medication.displayName,
+                        detail: [medication.doseDetail, medication.schedule.frequencySummary()]
+                            .filter { !$0.isEmpty }
+                            .joined(separator: " · "),
+                        summary: entry.summary
+                    )
+                },
+            timingNotes: notable.prefix(20).map { DoctorReport.ReportData.TimingNote(id: $0, text: $0) },
+            timingNoteCount: notable.count
         )
 
         do {
