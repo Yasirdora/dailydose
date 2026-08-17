@@ -24,6 +24,7 @@ struct ScanTabView: View {
     var onFinish: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var authorization = CameraAuthorization()
     @State private var recognized = RecognizedTextStore()
     @State private var scanned: LabelScanParser.Result?
@@ -58,11 +59,16 @@ struct ScanTabView: View {
             .toolbar(.hidden, for: .navigationBar)
             .toast($toast)
         }
-        .task {
-            authorization.refresh()
-            if authorization.state == .undetermined {
-                await authorization.request()
-            }
+        // Prime, don't pounce: the permission explanation must be read
+        // *before* the system alert, not behind it. A cold prompt is the
+        // single biggest cause of permanent camera denial, and denial here
+        // is one-way. The "Allow Camera" button in CameraUnavailableView
+        // makes the request.
+        .task { authorization.refresh() }
+        // The sheet disables drag-to-dismiss, so a user who fixes permission
+        // in Settings needs the state re-read when they come back.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { authorization.refresh() }
         }
         .onChange(of: recognized.strengthCandidate) { _, candidate in
             // Any change — appearing, disappearing, re-reading — restarts the
@@ -275,6 +281,7 @@ struct LabelScannerSheet: View {
     let onPick: (LabelScanParser.Result) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var authorization = CameraAuthorization()
     @State private var recognized = RecognizedTextStore()
 
@@ -303,9 +310,9 @@ struct LabelScannerSheet: View {
                 ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
             }
         }
-        .task {
-            authorization.refresh()
-            if authorization.state == .undetermined { await authorization.request() }
+        .task { authorization.refresh() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { authorization.refresh() }
         }
     }
 }
