@@ -71,7 +71,7 @@ struct HistoryView: View {
                 ToolbarItem(placement: .primaryAction) {
                     ToolbarGlyphButton(
                         systemImage: "square.and.arrow.up",
-                        label: String(localized: "Share summary")
+                        label: String(localized: "Share doctor report")
                     ) { exportSummary() }
                     .disabled(data.summary.total == 0)
                 }
@@ -92,29 +92,68 @@ struct HistoryView: View {
         "\(period.rawValue)-\(allEvents.count)-\(medications.count)"
     }
 
-    /// Writes the visible period as plain text and hands it to the share sheet.
+    /// Writes the visible period as an A4 PDF doctor report and hands it to
+    /// the share sheet.
     ///
-    /// Every number comes from the same `AdherenceCalculator` results the screen
-    /// is rendering, so what someone shares can never disagree with what they
-    /// were looking at when they shared it.
+    /// Every number comes from the same `AdherenceCalculator` results the
+    /// screen is rendering, so the report can never disagree with what the
+    /// user was looking at when they shared it. The timing appendix carries
+    /// the honest pair — scheduled 08:00, taken 11:40 — which is the detail
+    /// a physician actually asks about.
     private func exportSummary() {
-        let text = AdherenceSummary.text(
+        guard let store else { return }
+        let now = Date.now
+        let periodStart = Calendar.current.date(byAdding: .day, value: -(period.rawValue - 1), to: Calendar.current.startOfDay(for: now)) ?? now
+        let events = allEvents.filter { $0.scheduledAt >= periodStart && $0.scheduledAt <= now }
+
+        let timingNotes = events
+            .filter { $0.status == .taken }
+            .compactMap(timingNote(for:))
+            .sorted()
+            .prefix(20)
+            .map { DoctorReport.ReportData.TimingNote(id: $0, text: $0) }
+
+        let reportData = DoctorReport.ReportData(
+            periodDays: period.rawValue,
+            periodStart: periodStart,
+            generatedAt: now,
             overall: data.summary,
-            byMedication: data.byMedication.map {
-                AdherenceSummary.Line(name: $0.name, summary: $0.summary)
+            buckets: data.buckets,
+            medications: data.byMedication.map {
+                DoctorReport.ReportData.MedicationRow(
+                    id: $0.id, name: $0.name, detail: $0.detail, summary: $0.summary
+                )
             },
-            days: period.rawValue,
-            now: .now
+            timingNotes: timingNotes
         )
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(AdherenceSummary.fileName(days: period.rawValue, now: .now))
+
         do {
-            try text.write(to: url, atomically: true, encoding: .utf8)
+            let url = try DoctorReport.generate(reportData)
             exportedSummary = ExportedSummary(url: url)
             Haptics.success()
         } catch {
             Haptics.error()
         }
+    }
+
+    /// "Mon 10 Aug · Metformin — scheduled 08:00, taken 11:40 (3 h 40 min late)"
+    /// — only for doses whose timing strayed far enough to matter to a doctor.
+    private func timingNote(for event: DoseEvent) -> String? {
+        let delta = event.loggedAt.timeIntervalSince(event.scheduledAt)
+        // Notable: over an hour late, or over 15 minutes early.
+        let isLate = delta > 3600
+        let isEarly = delta < -DoseCalculator.dueGrace
+        guard isLate || isEarly else { return nil }
+
+        let day = event.scheduledAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+        let scheduled = event.scheduledAt.formatted(date: .omitted, time: .shortened)
+        let taken = event.loggedAt.formatted(date: .omitted, time: .shortened)
+        let minutes = Int(abs(delta) / 60)
+        let span = minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(minutes) min"
+        let direction = isLate
+            ? String(localized: "\(span) late")
+            : String(localized: "\(span) early")
+        return "\(day) · \(event.medicationName) — scheduled \(scheduled), taken \(taken) (\(direction))"
     }
 
     private func reload() {
@@ -134,6 +173,9 @@ struct HistoryView: View {
                     return MedicationAdherence(
                         id: entry.medicationID,
                         name: medication.displayName,
+                        detail: [medication.doseDetail, medication.schedule.frequencySummary()]
+                            .filter { !$0.isEmpty }
+                            .joined(separator: " · "),
                         color: MedicationColor.named(medication.colorName),
                         summary: entry.summary
                     )
@@ -167,6 +209,7 @@ private struct HistoryData {
 private struct MedicationAdherence: Identifiable {
     let id: String
     let name: String
+    let detail: String
     let color: MedicationColor
     let summary: AdherenceCalculator.Summary
 }
