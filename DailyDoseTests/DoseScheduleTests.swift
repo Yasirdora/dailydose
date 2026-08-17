@@ -205,6 +205,232 @@ struct DoseScheduleTests {
     }
 }
 
+@Suite("Every X hours")
+struct HourlyScheduleTests {
+
+    let calendar = Fixture.calendar()
+
+    @Test("Doses cross midnight instead of resetting each day")
+    func crossesMidnight() {
+        // First dose 22:00, every 8 hours → 22:00, 06:00, 14:00, 22:00…
+        let schedule = Fixture.schedule(
+            kind: .everyXHours,
+            times: [Fixture.time(22)],
+            start: Fixture.date(2026, 8, 10),
+            intervalHours: 8
+        )
+        let day10 = schedule.occurrences(
+            from: Fixture.date(2026, 8, 10), to: Fixture.date(2026, 8, 11), calendar: calendar
+        )
+        let day11 = schedule.occurrences(
+            from: Fixture.date(2026, 8, 11), to: Fixture.date(2026, 8, 12), calendar: calendar
+        )
+        #expect(day10 == [Fixture.date(2026, 8, 10, 22)])
+        #expect(day11 == [
+            Fixture.date(2026, 8, 11, 6),
+            Fixture.date(2026, 8, 11, 14),
+            Fixture.date(2026, 8, 11, 22),
+        ])
+        #expect(schedule.occurs(on: Fixture.date(2026, 8, 10), calendar: calendar))
+        #expect(schedule.occurs(on: Fixture.date(2026, 8, 11), calendar: calendar))
+    }
+
+    @Test("Nothing is scheduled before the anchor")
+    func respectsAnchor() {
+        let schedule = Fixture.schedule(
+            kind: .everyXHours,
+            times: [Fixture.time(22)],
+            start: Fixture.date(2026, 8, 10),
+            intervalHours: 8
+        )
+        #expect(schedule.occurs(on: Fixture.date(2026, 8, 9), calendar: calendar) == false)
+        // The window covers the whole start day; only the 22:00 anchor is in it.
+        let before = schedule.occurrences(
+            from: Fixture.date(2026, 8, 10), to: Fixture.date(2026, 8, 10, 21), calendar: calendar
+        )
+        #expect(before.isEmpty)
+    }
+
+    @Test("Eight hours means eight real hours across a DST jump")
+    func absoluteIntervalAcrossDST() {
+        // Europe/Berlin springs forward on 29 March 2026: 02:00–02:59 vanish.
+        // A wall-clock schedule would drift by an hour; a prescription that
+        // says "every 8 hours" must not.
+        let schedule = Fixture.schedule(
+            kind: .everyXHours,
+            times: [Fixture.time(20)],
+            start: Fixture.date(2026, 3, 28),
+            intervalHours: 8
+        )
+        let around = schedule.occurrences(
+            from: Fixture.date(2026, 3, 28, 20), to: Fixture.date(2026, 3, 31), calendar: calendar
+        )
+        for pair in zip(around, around.dropFirst()) {
+            #expect(pair.1.timeIntervalSince(pair.0) == 8 * 3600,
+                    "Every gap stays exactly 8 real hours, DST or not")
+        }
+        #expect(around.count >= 6)
+    }
+
+    @Test("The upper bound is exclusive and the lower inclusive")
+    func boundsAreHalfOpen() {
+        let schedule = Fixture.schedule(
+            kind: .everyXHours,
+            times: [Fixture.time(8)],
+            start: Fixture.date(2026, 8, 10),
+            intervalHours: 6
+        )
+        let doses = schedule.occurrences(
+            from: Fixture.date(2026, 8, 11, 8), to: Fixture.date(2026, 8, 11, 20), calendar: calendar
+        )
+        #expect(doses == [Fixture.date(2026, 8, 11, 8), Fixture.date(2026, 8, 11, 14)])
+    }
+
+    @Test("An end date stops the sequence, inclusive of the final day")
+    func endDateStopsSequence() {
+        let schedule = Fixture.schedule(
+            kind: .everyXHours,
+            times: [Fixture.time(8)],
+            start: Fixture.date(2026, 8, 10),
+            intervalHours: 12,
+            end: Fixture.date(2026, 8, 11)
+        )
+        let all = schedule.occurrences(
+            from: Fixture.date(2026, 8, 10), to: Fixture.date(2026, 8, 14), calendar: calendar
+        )
+        #expect(all == [
+            Fixture.date(2026, 8, 10, 8), Fixture.date(2026, 8, 10, 20),
+            Fixture.date(2026, 8, 11, 8), Fixture.date(2026, 8, 11, 20),
+        ])
+        #expect(schedule.occurs(on: Fixture.date(2026, 8, 12), calendar: calendar) == false)
+    }
+
+    @Test("Next occurrence is the first multiple strictly after now")
+    func nextOccurrenceStrictlyAfter() {
+        let schedule = Fixture.schedule(
+            kind: .everyXHours,
+            times: [Fixture.time(8)],
+            start: Fixture.date(2026, 8, 10),
+            intervalHours: 8
+        )
+        // Anchor 08:00. Just before it, the anchor itself is next; at it, the next one is.
+        #expect(schedule.nextOccurrence(after: Fixture.date(2026, 8, 10, 7, 59), calendar: calendar)
+            == Fixture.date(2026, 8, 10, 8))
+        #expect(schedule.nextOccurrence(after: Fixture.date(2026, 8, 10, 8), calendar: calendar)
+            == Fixture.date(2026, 8, 10, 16))
+    }
+
+    @Test("An hourly course that ended has no next occurrence")
+    func endedHourlyCourse() {
+        let schedule = Fixture.schedule(
+            kind: .everyXHours,
+            times: [Fixture.time(8)],
+            start: Fixture.date(2026, 8, 1),
+            intervalHours: 8,
+            end: Fixture.date(2026, 8, 5)
+        )
+        #expect(schedule.nextOccurrence(after: Fixture.date(2026, 8, 12), calendar: calendar) == nil)
+    }
+
+    @Test("The summary names the interval in words")
+    func summaryInWords() {
+        let schedule = Fixture.schedule(
+            kind: .everyXHours, start: Fixture.date(2026, 8, 10), intervalHours: 8
+        )
+        #expect(schedule.summary(calendar: calendar) == "Every 8 hours")
+        #expect(schedule.frequencySummary(calendar: calendar) == "Every 8 hours",
+                "An hourly course must never be described as 'once a day'")
+    }
+}
+
+@Suite("Recurring cycle")
+struct CycleScheduleTests {
+
+    let calendar = Fixture.calendar()
+
+    // A 3-on / 2-off cycle starting Monday 10 Aug 2026:
+    // on 10 11 12, off 13 14, on 15 16 17, off 18 19, on 20…
+
+    @Test("Active and rest days alternate from the start date")
+    func alternatesFromStart() {
+        let schedule = Fixture.schedule(
+            kind: .cycle,
+            start: Fixture.date(2026, 8, 10),
+            cycleOnDays: 3, cycleOffDays: 2
+        )
+        let expected: [(Int, Bool)] = [
+            (9, false),   // before the course
+            (10, true), (11, true), (12, true),
+            (13, false), (14, false),
+            (15, true), (16, true), (17, true),
+            (18, false), (19, false),
+            (20, true),
+        ]
+        for (day, active) in expected {
+            #expect(schedule.occurs(on: Fixture.date(2026, 8, day), calendar: calendar) == active,
+                    "August \(day) should be \(active ? "on" : "off")")
+        }
+    }
+
+    @Test("The cycle spans months without realigning")
+    func spansMonths() {
+        // 21 on / 7 off from 10 Aug: first rest starts 31 Aug, second
+        // active block starts 7 Sep. The rhythm counts days, not calendar pages.
+        let schedule = Fixture.schedule(
+            kind: .cycle,
+            start: Fixture.date(2026, 8, 10),
+            cycleOnDays: 21, cycleOffDays: 7
+        )
+        #expect(schedule.occurs(on: Fixture.date(2026, 8, 30), calendar: calendar))
+        #expect(schedule.occurs(on: Fixture.date(2026, 8, 31), calendar: calendar) == false)
+        #expect(schedule.occurs(on: Fixture.date(2026, 9, 6), calendar: calendar) == false)
+        #expect(schedule.occurs(on: Fixture.date(2026, 9, 7), calendar: calendar))
+    }
+
+    @Test("An end date closes the course even mid-cycle")
+    func endDateClosesMidCycle() {
+        let schedule = Fixture.schedule(
+            kind: .cycle,
+            start: Fixture.date(2026, 8, 10),
+            cycleOnDays: 21, cycleOffDays: 7,
+            end: Fixture.date(2026, 8, 15)
+        )
+        #expect(schedule.occurs(on: Fixture.date(2026, 8, 15), calendar: calendar))
+        #expect(schedule.occurs(on: Fixture.date(2026, 8, 16), calendar: calendar) == false)
+    }
+
+    @Test("Occurrences on an active day carry the day's dose times")
+    func occurrencesCarryTimes() {
+        let schedule = Fixture.schedule(
+            kind: .cycle,
+            times: [Fixture.time(8), Fixture.time(20)],
+            start: Fixture.date(2026, 8, 10),
+            cycleOnDays: 3, cycleOffDays: 2
+        )
+        let on = schedule.occurrences(
+            from: Fixture.date(2026, 8, 11), to: Fixture.date(2026, 8, 12), calendar: calendar
+        )
+        #expect(on == [Fixture.date(2026, 8, 11, 8), Fixture.date(2026, 8, 11, 20)])
+        let off = schedule.occurrences(
+            from: Fixture.date(2026, 8, 13), to: Fixture.date(2026, 8, 14), calendar: calendar
+        )
+        #expect(off.isEmpty)
+    }
+
+    @Test("The summary describes the rhythm, not a daily count")
+    func summaryDescribesRhythm() {
+        let schedule = Fixture.schedule(
+            kind: .cycle,
+            times: [Fixture.time(8), Fixture.time(20)],
+            start: Fixture.date(2026, 8, 10),
+            cycleOnDays: 21, cycleOffDays: 7
+        )
+        #expect(schedule.summary(calendar: calendar) == "21 days on · 7 days off")
+        #expect(schedule.frequencySummary(calendar: calendar) == "21 days on · 7 days off",
+                "A cycle taken twice a day must never read as just 'twice a day'")
+    }
+}
+
 @Suite("Time of day")
 struct TimeOfDayTests {
 

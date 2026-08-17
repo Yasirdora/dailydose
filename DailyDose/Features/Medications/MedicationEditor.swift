@@ -134,6 +134,23 @@ struct MedicationEditor: View {
                 }
             }
 
+            if draft.kind == .everyXHours {
+                Stepper(value: $draft.intervalHours, in: 1...24) {
+                    Text(draft.intervalHours == 1
+                         ? String(localized: "Every hour")
+                         : String(localized: "Every \(draft.intervalHours) hours"))
+                }
+            }
+
+            if draft.kind == .cycle {
+                Stepper(value: $draft.cycleOnDays, in: 1...90) {
+                    Text(String(localized: "Take for \(draft.cycleOnDays) days"))
+                }
+                Stepper(value: $draft.cycleOffDays, in: 1...30) {
+                    Text(String(localized: "Break for \(draft.cycleOffDays) days"))
+                }
+            }
+
             if draft.kind == .weekdays {
                 WeekdayPicker(selection: $draft.weekdays)
             }
@@ -148,9 +165,11 @@ struct MedicationEditor: View {
 
             ForEach(Array(draft.times.sorted().enumerated()), id: \.element) { index, time in
                 DatePicker(
-                    draft.times.count == 1
-                        ? String(localized: "Time")
-                        : String(localized: "Time \(index + 1)"),
+                    draft.kind == .everyXHours
+                        ? String(localized: "First dose at")
+                        : draft.times.count == 1
+                            ? String(localized: "Time")
+                            : String(localized: "Time \(index + 1)"),
                     selection: binding(for: time),
                     displayedComponents: .hourAndMinute
                 )
@@ -354,6 +373,9 @@ private struct FrequencyPicker: View {
                     }
                 }
                 Section {
+                    row(title: String(localized: "Every X hours"), isSelected: draft.kind == .everyXHours) {
+                        draft.setKind(.everyXHours)
+                    }
                     row(title: String(localized: "Every X days"), isSelected: draft.kind == .everyXDays) {
                         draft.setKind(.everyXDays)
                     }
@@ -362,6 +384,9 @@ private struct FrequencyPicker: View {
                     }
                     row(title: String(localized: "Every month"), isSelected: draft.kind == .monthly) {
                         draft.setKind(.monthly)
+                    }
+                    row(title: String(localized: "Recurring cycle (days on / off)"), isSelected: draft.kind == .cycle) {
+                        draft.setKind(.cycle)
                     }
                 }
             }

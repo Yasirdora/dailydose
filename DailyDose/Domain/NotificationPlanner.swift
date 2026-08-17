@@ -165,6 +165,12 @@ enum NotificationPlanner {
             case .everyXDays, .monthly:
                 // Calendar triggers cannot express "every 21 days".
                 return nil
+            case .everyXHours, .cycle:
+                // Calendar triggers cannot express "every 8 hours" across
+                // midnight or "21 on / 7 off". These go through the projected
+                // one-shot path, which asks `occurrences(from:to:)` — and that
+                // speaks both fluently.
+                return nil
             }
         }
 

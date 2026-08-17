@@ -14,7 +14,7 @@ import SwiftData
 /// `BackupServiceTests.testExportImportRoundTrip`.
 enum BackupService {
 
-    static let currentVersion = 2
+    static let currentVersion = 3
     static let fileExtension = "dailydose"
 
     // MARK: - Wire format
@@ -44,6 +44,11 @@ enum BackupService {
         var dayOfMonth: Int?
         var startDate: Date
         var endDate: Date?
+        /// Added in format v3. Optional, so v2 backups still decode; a missing
+        /// value simply means the schedule kind that uses it wasn't around yet.
+        var intervalHours: Int?
+        var cycleOnDays: Int?
+        var cycleOffDays: Int?
 
         var pillsRemaining: Int?
         var refillThreshold: Int?
@@ -81,6 +86,9 @@ enum BackupService {
                     dayOfMonth: schedule.dayOfMonth,
                     startDate: schedule.startDate,
                     endDate: schedule.endDate,
+                    intervalHours: schedule.intervalHours,
+                    cycleOnDays: schedule.cycleOnDays,
+                    cycleOffDays: schedule.cycleOffDays,
                     pillsRemaining: medication.pillsRemaining,
                     refillThreshold: medication.refillThreshold
                 )
@@ -158,6 +166,9 @@ enum BackupService {
                 weekdays: Set(record.weekdays),
                 intervalDays: record.intervalDays,
                 dayOfMonth: record.dayOfMonth,
+                intervalHours: record.intervalHours ?? 8,
+                cycleOnDays: record.cycleOnDays ?? 21,
+                cycleOffDays: record.cycleOffDays ?? 7,
                 endDate: record.endDate
             )
 

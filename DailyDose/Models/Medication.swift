@@ -41,6 +41,12 @@ final class Medication {
     var weekdaysRaw: [Int] = [1, 2, 3, 4, 5, 6, 7]
     var intervalDays: Int = 1
     var dayOfMonth: Int?
+    /// For `.everyXHours`. Defaulted (like `importanceRaw`), so existing
+    /// stores lightweight-migrate instead of needing a custom stage.
+    var intervalHours: Int = 8
+    /// For `.cycle`: active days, then rest days, repeating.
+    var cycleOnDays: Int = 21
+    var cycleOffDays: Int = 7
     /// The day the course begins. Non-optional by design — see `DoseSchedule`.
     var startDate: Date = Date.distantPast
     var endDate: Date?
@@ -95,6 +101,9 @@ final class Medication {
         self.weekdaysRaw = schedule.weekdays.sorted()
         self.intervalDays = schedule.intervalDays
         self.dayOfMonth = schedule.dayOfMonth
+        self.intervalHours = schedule.intervalHours
+        self.cycleOnDays = schedule.cycleOnDays
+        self.cycleOffDays = schedule.cycleOffDays
         self.startDate = schedule.startDate
         self.endDate = schedule.endDate
     }
@@ -117,6 +126,9 @@ extension Medication {
                 weekdays: Set(weekdaysRaw.filter { (1...7).contains($0) }),
                 intervalDays: intervalDays,
                 dayOfMonth: dayOfMonth,
+                intervalHours: intervalHours,
+                cycleOnDays: cycleOnDays,
+                cycleOffDays: cycleOffDays,
                 endDate: endDate
             )
         }
@@ -126,6 +138,9 @@ extension Medication {
             weekdaysRaw = newValue.weekdays.sorted()
             intervalDays = newValue.intervalDays
             dayOfMonth = newValue.dayOfMonth
+            intervalHours = newValue.intervalHours
+            cycleOnDays = newValue.cycleOnDays
+            cycleOffDays = newValue.cycleOffDays
             startDate = newValue.startDate
             endDate = newValue.endDate
         }

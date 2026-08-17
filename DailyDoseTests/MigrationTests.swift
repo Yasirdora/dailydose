@@ -41,13 +41,16 @@ struct MigrationTests {
         try v1Context.save()
 
         // --- Reopen through the migration plan, as the updated app does. ---
-        let v2Schema = Schema(versionedSchema: DailyDoseSchemaV2.self)
-        let v2Container = try ModelContainer(
-            for: v2Schema,
+        // The plan chains V1→V2 (custom) and V2→V3 (lightweight); the app
+        // boots with the latest schema, so that is what the store is opened
+        // with here.
+        let v3Schema = Schema(versionedSchema: DailyDoseSchemaV3.self)
+        let v3Container = try ModelContainer(
+            for: v3Schema,
             migrationPlan: DailyDoseMigrationPlan.self,
-            configurations: [ModelConfiguration(schema: v2Schema, url: url)]
+            configurations: [ModelConfiguration(schema: v3Schema, url: url)]
         )
-        let medications = try ModelContext(v2Container).fetch(FetchDescriptor<Medication>())
+        let medications = try ModelContext(v3Container).fetch(FetchDescriptor<Medication>())
 
         #expect(medications.count == 1)
         let medication = try #require(medications.first)
@@ -70,5 +73,75 @@ struct MigrationTests {
         // Denormalised at migration time, so history survives a later delete.
         #expect(event.medicationName == "Metformin HCL")
         #expect(event.medicationColorName == "teal")
+    }
+
+    /// Writes a store with the frozen V2 models — the shape on every phone
+    /// that ran the app before hourly and cycle schedules — then opens it
+    /// through the plan. This is the exact update path for existing users.
+    @Test("A V2 store lightweight-migrates to V3 with defaults intact")
+    func v2StoreMigrates() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("migration-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("DailyDose.store")
+
+        // --- Write the store the way the previous build did. ---
+        let v2Schema = Schema(versionedSchema: DailyDoseSchemaV2.self)
+        let v2Container = try ModelContainer(
+            for: v2Schema,
+            configurations: [ModelConfiguration(schema: v2Schema, url: url)]
+        )
+        let v2Context = ModelContext(v2Container)
+
+        let scheduled = Fixture.date(2026, 8, 10, 8)
+        let legacy = DailyDoseSchemaV2.Medication(
+            id: "v2-id-1",
+            name: "Metformin",
+            doseDetail: "500 mg",
+            notes: "",
+            colorName: "teal",
+            isActive: true,
+            createdAt: Fixture.date(2026, 8, 1),
+            timesRaw: ["08:00"],
+            scheduleKindRaw: ScheduleKind.everyXDays.rawValue,
+            weekdaysRaw: [1, 2, 3, 4, 5, 6, 7],
+            intervalDays: 21,
+            dayOfMonth: nil,
+            startDate: Fixture.date(2026, 8, 1),
+            endDate: nil,
+            pillsRemaining: 60,
+            refillThreshold: 10
+        )
+        v2Context.insert(legacy)
+        v2Context.insert(DailyDoseSchemaV2.DoseEvent(
+            medication: legacy, scheduledAt: scheduled, statusRaw: "taken", loggedAt: scheduled
+        ))
+        try v2Context.save()
+
+        // --- Reopen through the migration plan, as the updated app does. ---
+        let v3Schema = Schema(versionedSchema: DailyDoseSchemaV3.self)
+        let v3Container = try ModelContainer(
+            for: v3Schema,
+            migrationPlan: DailyDoseMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: v3Schema, url: url)]
+        )
+        let medications = try ModelContext(v3Container).fetch(FetchDescriptor<Medication>())
+
+        #expect(medications.count == 1)
+        let medication = try #require(medications.first)
+        #expect(medication.id == "v2-id-1")
+        #expect(medication.schedule.kind == .everyXDays)
+        #expect(medication.schedule.intervalDays == 21)
+        #expect(medication.schedule.sortedTimes.map(\.rawValue) == ["08:00"])
+        #expect(medication.pillsRemaining == 60)
+        // The new columns arrive with their defaults — harmless for a kind
+        // that never reads them, present for one that does.
+        #expect(medication.intervalHours == 8)
+        #expect(medication.cycleOnDays == 21)
+        #expect(medication.cycleOffDays == 7)
+
+        #expect(medication.events.count == 1)
+        #expect(medication.events.first?.medicationName == "Metformin")
     }
 }

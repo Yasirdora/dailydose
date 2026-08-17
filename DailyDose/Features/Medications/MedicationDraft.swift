@@ -18,6 +18,12 @@ struct MedicationDraft: Equatable {
     var weekdays: Set<Int> = Set(1...7)
     var intervalDays = 2
     var dayOfMonth = Calendar.current.component(.day, from: .now)
+    /// For `.everyXHours`: the gap between doses. The single entry in `times`
+    /// is the first dose — the anchor the whole sequence counts from.
+    var intervalHours = 8
+    /// For `.cycle`: this many days on, then this many days off.
+    var cycleOnDays = 21
+    var cycleOffDays = 7
     var startDate = Calendar.current.startOfDay(for: .now)
     var endDate: Date?
 
@@ -53,6 +59,9 @@ struct MedicationDraft: Equatable {
         weekdays = schedule.weekdays.isEmpty ? Set(1...7) : schedule.weekdays
         intervalDays = schedule.intervalDays
         dayOfMonth = schedule.dayOfMonth ?? Calendar.current.component(.day, from: schedule.startDate)
+        intervalHours = schedule.intervalHours
+        cycleOnDays = schedule.cycleOnDays
+        cycleOffDays = schedule.cycleOffDays
         startDate = schedule.startDate
         endDate = schedule.endDate
         tracksSupply = medication.pillsRemaining != nil
@@ -151,6 +160,9 @@ struct MedicationDraft: Equatable {
             weekdays: kind == .weekdays ? weekdays : Set(1...7),
             intervalDays: kind == .everyXDays ? intervalDays : 1,
             dayOfMonth: kind == .monthly ? dayOfMonth : nil,
+            intervalHours: kind == .everyXHours ? intervalHours : 8,
+            cycleOnDays: kind == .cycle ? cycleOnDays : 21,
+            cycleOffDays: kind == .cycle ? cycleOffDays : 7,
             endDate: endDate
         )
     }
@@ -169,6 +181,14 @@ struct MedicationDraft: Equatable {
             intervalDays == 1
                 ? String(localized: "Every day")
                 : String(localized: "Every \(intervalDays) days")
+        case .everyXHours:
+            intervalHours == 1
+                ? String(localized: "Every hour")
+                : String(localized: "Every \(intervalHours) hours")
+        case .cycle:
+            cycleOffDays == 0
+                ? String(localized: "Every day")
+                : String(localized: "\(cycleOnDays) days on · \(cycleOffDays) days off")
         case .weekdays:
             weekdaySummary
         case .monthly:

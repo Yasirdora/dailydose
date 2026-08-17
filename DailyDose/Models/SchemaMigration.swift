@@ -65,9 +65,108 @@ enum DailyDoseSchemaV1: VersionedSchema {
     }
 }
 
-/// The current schema. This is what the app boots with.
+/// The schema as shipped before hourly and cycle schedules existed, kept
+/// frozen forever. The live `Medication` has since gained `intervalHours`,
+/// `cycleOnDays` and `cycleOffDays`; those belong to V3, so V2 keeps its own
+/// copies under the original entity names.
 enum DailyDoseSchemaV2: VersionedSchema {
     static let versionIdentifier = Schema.Version(2, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [Medication.self, DoseEvent.self]
+    }
+
+    @Model
+    final class Medication {
+        @Attribute(.unique) var id: String = ""
+        var name: String
+        var doseDetail: String
+        var notes: String
+        var colorName: String
+        var isActive: Bool
+        var createdAt: Date
+        var timesRaw: [String] = []
+        var scheduleKindRaw: String = "daily"
+        var weekdaysRaw: [Int] = [1, 2, 3, 4, 5, 6, 7]
+        var intervalDays: Int = 1
+        var dayOfMonth: Int?
+        var startDate: Date = Date.distantPast
+        var endDate: Date?
+        var pillsRemaining: Int?
+        var refillThreshold: Int?
+        var importanceRaw: String = "standard"
+
+        @Relationship(deleteRule: .nullify, inverse: \DoseEvent.medication)
+        var events: [DoseEvent] = []
+
+        init(
+            id: String,
+            name: String,
+            doseDetail: String,
+            notes: String,
+            colorName: String,
+            isActive: Bool,
+            createdAt: Date,
+            timesRaw: [String],
+            scheduleKindRaw: String,
+            weekdaysRaw: [Int],
+            intervalDays: Int,
+            dayOfMonth: Int?,
+            startDate: Date,
+            endDate: Date?,
+            pillsRemaining: Int?,
+            refillThreshold: Int?
+        ) {
+            self.id = id
+            self.name = name
+            self.doseDetail = doseDetail
+            self.notes = notes
+            self.colorName = colorName
+            self.isActive = isActive
+            self.createdAt = createdAt
+            self.timesRaw = timesRaw
+            self.scheduleKindRaw = scheduleKindRaw
+            self.weekdaysRaw = weekdaysRaw
+            self.intervalDays = intervalDays
+            self.dayOfMonth = dayOfMonth
+            self.startDate = startDate
+            self.endDate = endDate
+            self.pillsRemaining = pillsRemaining
+            self.refillThreshold = refillThreshold
+        }
+    }
+
+    @Model
+    final class DoseEvent {
+        var medicationID: String = ""
+        var medicationName: String = ""
+        var medicationColorName: String = ""
+        var scheduledAt: Date
+        var loggedAt: Date
+        var statusRaw: String
+
+        @Relationship var medication: Medication?
+
+        init(medication: Medication?, scheduledAt: Date, statusRaw: String, loggedAt: Date) {
+            self.medication = medication
+            self.medicationID = medication?.id ?? ""
+            self.medicationName = medication?.name.singleLine ?? ""
+            self.medicationColorName = medication?.colorName ?? ""
+            self.scheduledAt = scheduledAt
+            self.statusRaw = statusRaw
+            self.loggedAt = loggedAt
+        }
+    }
+}
+
+/// The current schema. This is what the app boots with.
+///
+/// V3 adds three stored properties to `Medication` — `intervalHours`,
+/// `cycleOnDays`, `cycleOffDays` — all with defaults, so the V2→V3 stage is a
+/// lightweight migration: CoreData adds the columns and fills the defaults,
+/// no row is ever read or rewritten.
+enum DailyDoseSchemaV3: VersionedSchema {
+    static let versionIdentifier = Schema.Version(3, 0, 0)
 
     static var models: [any PersistentModel.Type] {
         [Medication.self, DoseEvent.self]
@@ -101,12 +200,19 @@ enum DailyDoseSchemaV2: VersionedSchema {
 /// mapping-model guesses, nothing lost.
 enum DailyDoseMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [DailyDoseSchemaV1.self, DailyDoseSchemaV2.self]
+        [DailyDoseSchemaV1.self, DailyDoseSchemaV2.self, DailyDoseSchemaV3.self]
     }
 
     static var stages: [MigrationStage] {
-        [migrateV1toV2]
+        [migrateV1toV2, migrateV2toV3]
     }
+
+    /// V2 → V3 only adds defaulted columns (`intervalHours`, `cycleOnDays`,
+    /// `cycleOffDays`), so the structural migration is sufficient on its own.
+    static let migrateV2toV3 = MigrationStage.lightweight(
+        fromVersion: DailyDoseSchemaV2.self,
+        toVersion: DailyDoseSchemaV3.self
+    )
 
     /// Everything a V1 row knew, as a Sendable value. The handoff between the
     /// two migration contexts happens through these, never through models.
@@ -193,7 +299,11 @@ enum DailyDoseMigrationPlan: SchemaMigrationPlan {
             try context.save()
         },
         didMigrate: { context in
-            // This context speaks V2. Rebuild every row from the snapshots.
+            // This context speaks V2 — so it is written with the frozen V2
+            // models, never the live ones. The live `Medication` is V3-shaped;
+            // inserting it here would either drop the new columns or crash on
+            // attributes this context doesn't know. The lightweight V2→V3
+            // stage that follows fills the new columns with their defaults.
             for legacy in LegacyCarry.shared.drain() {
                 let kind = ScheduleKind(rawValue: legacy.scheduleKindRaw ?? "") ?? .weekdays
                 let schedule = DoseSchedule(
@@ -206,25 +316,31 @@ enum DailyDoseMigrationPlan: SchemaMigrationPlan {
                     endDate: legacy.endDate
                 )
 
-                let medication = Medication(
+                let medication = DailyDoseSchemaV2.Medication(
                     id: legacy.uuid,
                     name: legacy.name,
                     doseDetail: legacy.doseDetail,
                     notes: legacy.notes,
                     colorName: legacy.colorName,
-                    schedule: schedule,
-                    pillsRemaining: legacy.pillsRemaining,
-                    refillThreshold: legacy.refillWarnAt,
                     isActive: legacy.isActive,
-                    createdAt: legacy.createdAt
+                    createdAt: legacy.createdAt,
+                    timesRaw: schedule.sortedTimes.map(\.rawValue),
+                    scheduleKindRaw: schedule.kind.rawValue,
+                    weekdaysRaw: schedule.weekdays.sorted(),
+                    intervalDays: schedule.intervalDays,
+                    dayOfMonth: schedule.dayOfMonth,
+                    startDate: schedule.startDate,
+                    endDate: schedule.endDate,
+                    pillsRemaining: legacy.pillsRemaining,
+                    refillThreshold: legacy.refillWarnAt
                 )
                 context.insert(medication)
 
                 for legacyEvent in legacy.events {
-                    context.insert(DoseEvent(
+                    context.insert(DailyDoseSchemaV2.DoseEvent(
                         medication: medication,
                         scheduledAt: legacyEvent.scheduledAt,
-                        status: DoseStatus(rawValue: legacyEvent.statusRaw) ?? .taken,
+                        statusRaw: legacyEvent.statusRaw,
                         loggedAt: legacyEvent.loggedAt
                     ))
                 }

@@ -33,6 +33,9 @@ struct BackupTests {
             weekdays: [2, 4],
             intervalDays: 21,
             dayOfMonth: 15,
+            intervalHours: 6,
+            cycleOnDays: 21,
+            cycleOffDays: 7,
             endDate: Fixture.date(2026, 12, 31)
         )
         let medication = Medication(name: "Methotrexate", schedule: schedule, pillsRemaining: 12, refillThreshold: 4)
@@ -54,12 +57,40 @@ struct BackupTests {
         #expect(result.kind == .everyXDays)
         #expect(result.intervalDays == 21)
         #expect(result.dayOfMonth == 15)
+        #expect(result.intervalHours == 6)
+        #expect(result.cycleOnDays == 21)
+        #expect(result.cycleOffDays == 7)
         #expect(result.times == schedule.times)
         #expect(result.weekdays == schedule.weekdays)
         #expect(result.startDate.timeIntervalSince1970 == schedule.startDate.timeIntervalSince1970)
         #expect(result.endDate?.timeIntervalSince1970 == schedule.endDate?.timeIntervalSince1970)
         #expect(fetched[0].pillsRemaining == 12)
         #expect(fetched[0].refillThreshold == 4)
+    }
+
+    @Test("A v2 backup without the new schedule fields still decodes")
+    func v2BackupDecodesWithDefaults() throws {
+        // Hand-written JSON in the v2 shape: no intervalHours, no cycle days.
+        // Optional record fields must decode as absent, not fail the import.
+        let json = """
+        {
+          "app": "Daily Dose",
+          "version": 2,
+          "exportedAt": "2026-08-01T08:00:00Z",
+          "events": [],
+          "medications": [{
+            "id": "m1", "name": "Metformin", "doseDetail": "", "notes": "",
+            "colorName": "teal", "isActive": true,
+            "createdAt": "2026-08-01T08:00:00Z",
+            "scheduleKind": "daily", "times": ["08:00"],
+            "weekdays": [1, 2, 3, 4, 5, 6, 7], "intervalDays": 1,
+            "startDate": "2026-08-01T08:00:00Z"
+          }]
+        }
+        """
+        let archive = try BackupService.decode(Data(json.utf8))
+        #expect(archive.medications.count == 1)
+        #expect(archive.medications[0].intervalHours == nil)
     }
 
     @Test("Importing twice does not duplicate history")

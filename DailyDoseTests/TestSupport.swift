@@ -43,12 +43,18 @@ enum Fixture {
         weekdays: Set<Int> = Set(1...7),
         intervalDays: Int = 1,
         dayOfMonth: Int? = nil,
+        intervalHours: Int = 8,
+        cycleOnDays: Int = 21,
+        cycleOffDays: Int = 7,
         end: Date? = nil
     ) -> DoseSchedule {
         DoseSchedule(
             kind: kind, times: times, startDate: start,
             weekdays: weekdays, intervalDays: intervalDays,
-            dayOfMonth: dayOfMonth, endDate: end
+            dayOfMonth: dayOfMonth,
+            intervalHours: intervalHours,
+            cycleOnDays: cycleOnDays, cycleOffDays: cycleOffDays,
+            endDate: end
         )
     }
 

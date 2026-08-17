@@ -5,6 +5,8 @@ enum ScheduleKind: String, Codable, CaseIterable, Sendable {
     case weekdays       // chosen days of the week
     case everyXDays     // every N days from a start date
     case monthly        // same day each month
+    case everyXHours    // every N hours from a first-dose anchor — crosses midnight
+    case cycle          // N days on, M days off, repeating (e.g. 21 on / 7 off)
 }
 
 /// When a medication is due — the single source of truth for the whole app.
@@ -25,6 +27,15 @@ struct DoseSchedule: Equatable, Sendable {
     var weekdays: Set<Int>
     var intervalDays: Int
     var dayOfMonth: Int?
+    /// Only read for `.everyXHours`. The anchor is the first dose's clock time
+    /// on `startDate`; every later dose is a whole multiple of this interval
+    /// after it — 8 hours means 8 real hours, even across a DST jump, because
+    /// that's what the prescription means.
+    var intervalHours: Int
+    /// Only read for `.cycle`. `cycleOnDays` active days alternate with
+    /// `cycleOffDays` rest days; a rest length of 0 degenerates to daily.
+    var cycleOnDays: Int
+    var cycleOffDays: Int
     /// The day the course begins. **Never optional.**
     ///
     /// This is the fix for the app's worst bug: without a floor, a medication
@@ -42,6 +53,9 @@ struct DoseSchedule: Equatable, Sendable {
         weekdays: Set<Int> = Set(1...7),
         intervalDays: Int = 1,
         dayOfMonth: Int? = nil,
+        intervalHours: Int = 8,
+        cycleOnDays: Int = 21,
+        cycleOffDays: Int = 7,
         endDate: Date? = nil
     ) {
         self.kind = kind
@@ -50,6 +64,9 @@ struct DoseSchedule: Equatable, Sendable {
         self.weekdays = weekdays
         self.intervalDays = max(1, intervalDays)
         self.dayOfMonth = dayOfMonth
+        self.intervalHours = max(1, min(intervalHours, 24))
+        self.cycleOnDays = max(1, cycleOnDays)
+        self.cycleOffDays = max(0, cycleOffDays)
         self.endDate = endDate
     }
 
@@ -86,6 +103,21 @@ struct DoseSchedule: Equatable, Sendable {
             let lastDayOfMonth = calendar.range(of: .day, in: .month, for: dayStart)?.count ?? 31
             // "The 31st" in a 30-day month means the last day, not "skip this month".
             return calendar.component(.day, from: dayStart) == min(target, lastDayOfMonth)
+
+        case .everyXHours:
+            // Not day-anchored: ask whether the arithmetic sequence lands
+            // inside this day at all.
+            guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return false }
+            return !hourlyOccurrences(from: dayStart, to: dayEnd, calendar: calendar).isEmpty
+
+        case .cycle:
+            let from = calendar.startOfDay(for: startDate)
+            guard let elapsed = calendar.dateComponents([.day], from: from, to: dayStart).day else {
+                return false
+            }
+            let length = cycleOnDays + cycleOffDays
+            guard elapsed >= 0, length > 0 else { return false }
+            return elapsed % length < cycleOnDays
         }
     }
 
@@ -96,6 +128,12 @@ struct DoseSchedule: Equatable, Sendable {
     /// the cost is proportional to the range they actually asked for.
     func occurrences(from start: Date, to end: Date, calendar: Calendar = .current) -> [Date] {
         guard start < end, !times.isEmpty else { return [] }
+
+        // Hourly schedules are a pure arithmetic sequence; walking day by day
+        // would still work, but the direct form can't drift and is O(doses).
+        if kind == .everyXHours {
+            return hourlyOccurrences(from: start, to: end, calendar: calendar)
+        }
 
         var result: [Date] = []
         var day = calendar.startOfDay(for: start)
@@ -125,6 +163,23 @@ struct DoseSchedule: Equatable, Sendable {
         calendar: Calendar = .current
     ) -> Date? {
         guard let end = calendar.date(byAdding: .day, value: horizonDays, to: date) else { return nil }
+
+        if kind == .everyXHours {
+            // First multiple of the interval strictly after `date`.
+            guard let anchor = anchorInstant(calendar: calendar) else { return nil }
+            let interval = TimeInterval(intervalHours * 3600)
+            var k = 0
+            if date >= anchor {
+                k = Int(date.timeIntervalSince(anchor) / interval) + 1
+            }
+            let next = anchor.addingTimeInterval(TimeInterval(k) * interval)
+            guard next <= end else { return nil }
+            if let endDate, calendar.startOfDay(for: next) > calendar.startOfDay(for: endDate) {
+                return nil
+            }
+            return next
+        }
+
         var day = calendar.startOfDay(for: date)
 
         while day <= end {
@@ -139,6 +194,47 @@ struct DoseSchedule: Equatable, Sendable {
             day = next
         }
         return nil
+    }
+
+    // MARK: - Hourly schedules
+
+    /// The instant the hourly sequence counts from: the first dose's clock
+    /// time on the start day. `times` holds exactly one entry for this kind —
+    /// the editor enforces it — and this is where it becomes an anchor.
+    private func anchorInstant(calendar: Calendar) -> Date? {
+        guard let first = sortedTimes.first else { return nil }
+        return resolve(first, on: calendar.startOfDay(for: startDate), calendar: calendar)
+    }
+
+    /// Every dose instant of an `.everyXHours` schedule in `[start, end)`.
+    ///
+    /// Computed as `anchor + k · interval` rather than by stepping a clock, so
+    /// a daylight-saving jump shifts the wall-clock time but never the number
+    /// of real hours between doses — the behaviour a prescriber means when
+    /// they write "every 8 hours". Bounded by `endDate` like every other kind.
+    private func hourlyOccurrences(from start: Date, to end: Date, calendar: Calendar) -> [Date] {
+        guard let anchor = anchorInstant(calendar: calendar) else { return [] }
+        let interval = TimeInterval(intervalHours * 3600)
+
+        // First index k whose instant is >= start. Division gets us close;
+        // the two nudge loops make the boundary exact despite float rounding.
+        var k = 0
+        if start > anchor {
+            k = max(0, Int((start.timeIntervalSince(anchor) / interval).rounded(.up)))
+            while anchor.addingTimeInterval(TimeInterval(k) * interval) < start { k += 1 }
+            while k > 0, anchor.addingTimeInterval(TimeInterval(k - 1) * interval) >= start { k -= 1 }
+        }
+
+        var result: [Date] = []
+        var instant = anchor.addingTimeInterval(TimeInterval(k) * interval)
+        while instant < end {
+            if let endDate,
+               calendar.startOfDay(for: instant) > calendar.startOfDay(for: endDate) { break }
+            result.append(instant)
+            k += 1
+            instant = anchor.addingTimeInterval(TimeInterval(k) * interval)
+        }
+        return result
     }
 
     /// Resolves a wall-clock time on a day, handling the DST spring-forward gap.
@@ -200,6 +296,18 @@ struct DoseSchedule: Equatable, Sendable {
         case .monthly:
             let day = dayOfMonth ?? calendar.component(.day, from: startDate)
             base = String(localized: "Monthly on the \(day.ordinalString(locale: locale))")
+
+        case .everyXHours:
+            base = intervalHours == 1
+                ? String(localized: "Every hour")
+                : String(localized: "Every \(intervalHours) hours")
+
+        case .cycle:
+            if cycleOffDays == 0 {
+                base = String(localized: "Every day")
+            } else {
+                base = String(localized: "\(cycleOnDays) days on · \(cycleOffDays) days off")
+            }
         }
 
         guard let endDate else { return base }
@@ -210,13 +318,15 @@ struct DoseSchedule: Equatable, Sendable {
     /// Doses per day, used by the editor's frequency labels.
     var dosesPerDay: Int { times.count }
 
-    /// "Once a day", "Twice a day", "4 times a day" for daily-style courses;
-    /// the cadence in words ("Mon · Wed · Fri", "Every 21 days") otherwise.
+    /// "Once a day", "Twice a day", "4 times a day" for daily courses; the
+    /// cadence in words otherwise. Only `.daily` may use the "times a day"
+    /// phrasing — calling a 21/7 cycle "twice a day" would hide the very
+    /// thing the user needs to remember.
     /// Plain words, not pharmacy shorthand — understood at 18 and at 80.
     /// One definition shared by the Doses and Meds tabs, so the two can
     /// never describe the same medication differently.
     func frequencySummary(calendar: Calendar = .current, locale: Locale = .current) -> String {
-        guard kind == .daily || dosesPerDay > 1 else {
+        guard kind == .daily else {
             return summary(calendar: calendar, locale: locale)
         }
         switch dosesPerDay {

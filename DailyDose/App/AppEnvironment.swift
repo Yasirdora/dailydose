@@ -34,7 +34,7 @@ final class AppEnvironment {
     private(set) var status: Status
 
     init() {
-        let schema = Schema(versionedSchema: DailyDoseSchemaV2.self)
+        let schema = Schema(versionedSchema: DailyDoseSchemaV3.self)
         var status: Status = .ready
         var container: ModelContainer
 
