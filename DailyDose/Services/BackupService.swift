@@ -60,6 +60,11 @@ enum BackupService {
         var medicationName: String
         var medicationColorName: String
         var scheduledAt: Date
+        /// The dose's wall-clock identity in the timezone it was logged in —
+        /// without it, a backup restored after a move (or onto a phone in
+        /// another timezone) would unmoor every dose from its schedule.
+        /// Optional so archives written before V4 still decode.
+        var scheduledWallKey: String?
         var status: String
         var loggedAt: Date
     }
@@ -99,6 +104,7 @@ enum BackupService {
                     medicationName: event.medicationName,
                     medicationColorName: event.medicationColorName,
                     scheduledAt: event.scheduledAt,
+                    scheduledWallKey: event.scheduledWallKey,
                     status: event.status.rawValue,
                     loggedAt: event.loggedAt
                 )
@@ -220,7 +226,8 @@ enum BackupService {
                 medicationColorName: record.medicationColorName,
                 scheduledAt: record.scheduledAt,
                 status: DoseStatus(rawValue: record.status) ?? .taken,
-                loggedAt: record.loggedAt
+                loggedAt: record.loggedAt,
+                wallKey: record.scheduledWallKey ?? ""
             )
             // Re-link to a live medication when one exists, so the relationship
             // (and cascade-free delete semantics) behave normally afterwards.

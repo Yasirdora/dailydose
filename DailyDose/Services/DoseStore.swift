@@ -75,13 +75,18 @@ final class DoseStore {
     /// Bounded on purpose. The old code held every event ever recorded in memory
     /// and scanned it linearly per dose; this fetches only what the caller will
     /// actually consult.
+    ///
+    /// Each event's stored wall-clock key travels with it, so a dose logged in
+    /// one timezone still matches its schedule after the phone changes timezone.
     func loggedEvents(from: Date, to: Date) -> LoggedEventIndex {
         var descriptor = FetchDescriptor<DoseEvent>(
             predicate: #Predicate { $0.scheduledAt >= from && $0.scheduledAt <= to }
         )
-        descriptor.propertiesToFetch = [\.medicationID, \.scheduledAt, \.statusRaw]
+        descriptor.propertiesToFetch = [\.medicationID, \.scheduledAt, \.statusRaw, \.scheduledWallKey]
         let events = (try? context.fetch(descriptor)) ?? []
-        return LoggedEventIndex(events.map { ($0.medicationID, $0.scheduledAt, $0.status) })
+        return LoggedEventIndex(keyedEvents: events.map {
+            ($0.medicationID, $0.scheduledAt, $0.scheduledWallKey, $0.status)
+        })
     }
 
     func adherenceRecords(since: Date) -> [AdherenceCalculator.Record] {

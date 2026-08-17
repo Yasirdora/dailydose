@@ -41,16 +41,16 @@ struct MigrationTests {
         try v1Context.save()
 
         // --- Reopen through the migration plan, as the updated app does. ---
-        // The plan chains V1→V2 (custom) and V2→V3 (lightweight); the app
-        // boots with the latest schema, so that is what the store is opened
-        // with here.
-        let v3Schema = Schema(versionedSchema: DailyDoseSchemaV3.self)
-        let v3Container = try ModelContainer(
-            for: v3Schema,
+        // The plan chains V1→V2 (custom), V2→V3 and V3→V4 (both lightweight);
+        // the app boots with the latest schema, so that is what the store is
+        // opened with here.
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV4.self)
+        let container = try ModelContainer(
+            for: currentSchema,
             migrationPlan: DailyDoseMigrationPlan.self,
-            configurations: [ModelConfiguration(schema: v3Schema, url: url)]
+            configurations: [ModelConfiguration(schema: currentSchema, url: url)]
         )
-        let medications = try ModelContext(v3Container).fetch(FetchDescriptor<Medication>())
+        let medications = try ModelContext(container).fetch(FetchDescriptor<Medication>())
 
         #expect(medications.count == 1)
         let medication = try #require(medications.first)
@@ -73,6 +73,9 @@ struct MigrationTests {
         // Denormalised at migration time, so history survives a later delete.
         #expect(event.medicationName == "Metformin HCL")
         #expect(event.medicationColorName == "teal")
+        // Written before wall-clock keys existed: empty, so the read path
+        // derives one in the current calendar — the legacy behaviour.
+        #expect(event.scheduledWallKey == "")
     }
 
     /// Writes a store with the frozen V2 models — the shape on every phone
@@ -120,13 +123,13 @@ struct MigrationTests {
         try v2Context.save()
 
         // --- Reopen through the migration plan, as the updated app does. ---
-        let v3Schema = Schema(versionedSchema: DailyDoseSchemaV3.self)
-        let v3Container = try ModelContainer(
-            for: v3Schema,
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV4.self)
+        let container = try ModelContainer(
+            for: currentSchema,
             migrationPlan: DailyDoseMigrationPlan.self,
-            configurations: [ModelConfiguration(schema: v3Schema, url: url)]
+            configurations: [ModelConfiguration(schema: currentSchema, url: url)]
         )
-        let medications = try ModelContext(v3Container).fetch(FetchDescriptor<Medication>())
+        let medications = try ModelContext(container).fetch(FetchDescriptor<Medication>())
 
         #expect(medications.count == 1)
         let medication = try #require(medications.first)
@@ -143,5 +146,92 @@ struct MigrationTests {
 
         #expect(medication.events.count == 1)
         #expect(medication.events.first?.medicationName == "Metformin")
+        #expect(medication.events.first?.scheduledWallKey == "")
+    }
+
+    /// Every launch after the update reopens an already-migrated store. The
+    /// plan must be a no-op for it: same counts, no duplicated rows.
+    @Test("Re-opening a migrated store changes nothing")
+    func reopeningIsIdempotent() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("migration-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("DailyDose.store")
+
+        let v2Schema = Schema(versionedSchema: DailyDoseSchemaV2.self)
+        let v2Container = try ModelContainer(
+            for: v2Schema,
+            configurations: [ModelConfiguration(schema: v2Schema, url: url)]
+        )
+        let v2Context = ModelContext(v2Container)
+        let legacy = DailyDoseSchemaV2.Medication(
+            id: "v2-id-1", name: "Metformin", doseDetail: "500 mg", notes: "",
+            colorName: "teal", isActive: true, createdAt: Fixture.date(2026, 8, 1),
+            timesRaw: ["08:00"], scheduleKindRaw: ScheduleKind.daily.rawValue,
+            weekdaysRaw: [1, 2, 3, 4, 5, 6, 7], intervalDays: 1, dayOfMonth: nil,
+            startDate: Fixture.date(2026, 8, 1), endDate: nil,
+            pillsRemaining: 60, refillThreshold: 10
+        )
+        v2Context.insert(legacy)
+        v2Context.insert(DailyDoseSchemaV2.DoseEvent(
+            medication: legacy, scheduledAt: Fixture.date(2026, 8, 10, 8),
+            statusRaw: "taken", loggedAt: Fixture.date(2026, 8, 10, 8)
+        ))
+        try v2Context.save()
+
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV4.self)
+        for pass in 1...2 {
+            let container = try ModelContainer(
+                for: currentSchema,
+                migrationPlan: DailyDoseMigrationPlan.self,
+                configurations: [ModelConfiguration(schema: currentSchema, url: url)]
+            )
+            let context = ModelContext(container)
+            let medications = try context.fetch(FetchDescriptor<Medication>())
+            let events = try context.fetch(FetchDescriptor<DoseEvent>())
+            #expect(medications.count == 1, "Pass \(pass): the medication must survive")
+            #expect(events.count == 1, "Pass \(pass): no event duplicated, none lost")
+        }
+    }
+
+    /// The shape on every phone running the previous build, opened by the new
+    /// one: the wall-key column arrives empty and everything else is untouched.
+    @Test("A V3 store lightweight-migrates to V4")
+    func v3StoreMigrates() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("migration-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("DailyDose.store")
+
+        let v3Schema = Schema(versionedSchema: DailyDoseSchemaV3.self)
+        let v3Container = try ModelContainer(
+            for: v3Schema,
+            configurations: [ModelConfiguration(schema: v3Schema, url: url)]
+        )
+        let v3Context = ModelContext(v3Container)
+        let medication = DailyDoseSchemaV3.Medication(name: "Metformin")
+        medication.id = "v3-id-1"
+        let scheduled = Fixture.date(2026, 8, 10, 8)
+        v3Context.insert(medication)
+        v3Context.insert(DailyDoseSchemaV3.DoseEvent(
+            medication: medication, scheduledAt: scheduled, statusRaw: "taken", loggedAt: scheduled
+        ))
+        try v3Context.save()
+
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV4.self)
+        let container = try ModelContainer(
+            for: currentSchema,
+            migrationPlan: DailyDoseMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: currentSchema, url: url)]
+        )
+        let context = ModelContext(container)
+        let events = try context.fetch(FetchDescriptor<DoseEvent>())
+
+        #expect(events.count == 1)
+        #expect(events.first?.scheduledWallKey == "")
+        #expect(events.first?.scheduledAt == scheduled)
+        #expect(events.first?.medicationName == "Metformin")
     }
 }

@@ -159,14 +159,88 @@ enum DailyDoseSchemaV2: VersionedSchema {
     }
 }
 
-/// The current schema. This is what the app boots with.
-///
-/// V3 adds three stored properties to `Medication` — `intervalHours`,
-/// `cycleOnDays`, `cycleOffDays` — all with defaults, so the V2→V3 stage is a
-/// lightweight migration: CoreData adds the columns and fills the defaults,
-/// no row is ever read or rewritten.
+/// The schema as shipped before timezone-safe matching existed, kept frozen
+/// forever. V4 adds `scheduledWallKey` to `DoseEvent`; V3 therefore keeps its
+/// own copies under the original entity names — the standard from here on is
+/// that only the *latest* schema may reference the live models.
 enum DailyDoseSchemaV3: VersionedSchema {
     static let versionIdentifier = Schema.Version(3, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [Medication.self, DoseEvent.self]
+    }
+
+    @Model
+    final class Medication {
+        @Attribute(.unique) var id: String = ""
+        var name: String
+        var doseDetail: String
+        var notes: String
+        var colorName: String
+        var isActive: Bool
+        var createdAt: Date
+        var timesRaw: [String] = []
+        var scheduleKindRaw: String = "daily"
+        var weekdaysRaw: [Int] = [1, 2, 3, 4, 5, 6, 7]
+        var intervalDays: Int = 1
+        var dayOfMonth: Int?
+        var intervalHours: Int = 8
+        var cycleOnDays: Int = 21
+        var cycleOffDays: Int = 7
+        var startDate: Date = Date.distantPast
+        var endDate: Date?
+        var pillsRemaining: Int?
+        var refillThreshold: Int?
+        var importanceRaw: String = "standard"
+
+        @Relationship(deleteRule: .nullify, inverse: \DoseEvent.medication)
+        var events: [DoseEvent] = []
+
+        init(name: String) {
+            self.name = name
+            self.doseDetail = ""
+            self.notes = ""
+            self.colorName = "teal"
+            self.isActive = true
+            self.createdAt = .now
+        }
+    }
+
+    @Model
+    final class DoseEvent {
+        var medicationID: String = ""
+        var medicationName: String = ""
+        var medicationColorName: String = ""
+        var scheduledAt: Date
+        var loggedAt: Date
+        var statusRaw: String
+
+        @Relationship var medication: Medication?
+
+        init(medication: Medication?, scheduledAt: Date, statusRaw: String, loggedAt: Date) {
+            self.medication = medication
+            self.medicationID = medication?.id ?? ""
+            self.medicationName = medication?.name.singleLine ?? ""
+            self.medicationColorName = medication?.colorName ?? ""
+            self.scheduledAt = scheduledAt
+            self.statusRaw = statusRaw
+            self.loggedAt = loggedAt
+        }
+    }
+}
+
+/// The current schema. This is what the app boots with.
+///
+/// V4 adds one defaulted column to `DoseEvent` — `scheduledWallKey`, the
+/// dose's wall-clock identity ("2026-10-25|08:00") captured in the timezone
+/// it was logged in. With it, a dose taken in Berlin still matches its
+/// schedule after the phone lands in Los Angeles; absolute-instant matching
+/// fabricated `.missed` rows for exactly that user (see TimezoneTravelTests).
+/// Defaulted, so the V3→V4 stage is lightweight: old rows get "" and the
+/// read path derives a key for them in the current calendar, which is
+/// precisely the pre-V4 behaviour.
+enum DailyDoseSchemaV4: VersionedSchema {
+    static let versionIdentifier = Schema.Version(4, 0, 0)
 
     static var models: [any PersistentModel.Type] {
         [Medication.self, DoseEvent.self]
@@ -200,11 +274,11 @@ enum DailyDoseSchemaV3: VersionedSchema {
 /// mapping-model guesses, nothing lost.
 enum DailyDoseMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [DailyDoseSchemaV1.self, DailyDoseSchemaV2.self, DailyDoseSchemaV3.self]
+        [DailyDoseSchemaV1.self, DailyDoseSchemaV2.self, DailyDoseSchemaV3.self, DailyDoseSchemaV4.self]
     }
 
     static var stages: [MigrationStage] {
-        [migrateV1toV2, migrateV2toV3]
+        [migrateV1toV2, migrateV2toV3, migrateV3toV4]
     }
 
     /// V2 → V3 only adds defaulted columns (`intervalHours`, `cycleOnDays`,
@@ -212,6 +286,13 @@ enum DailyDoseMigrationPlan: SchemaMigrationPlan {
     static let migrateV2toV3 = MigrationStage.lightweight(
         fromVersion: DailyDoseSchemaV2.self,
         toVersion: DailyDoseSchemaV3.self
+    )
+
+    /// V3 → V4 only adds one defaulted column (`scheduledWallKey`), same
+    /// reasoning: lightweight, no row is read or rewritten.
+    static let migrateV3toV4 = MigrationStage.lightweight(
+        fromVersion: DailyDoseSchemaV3.self,
+        toVersion: DailyDoseSchemaV4.self
     )
 
     /// Everything a V1 row knew, as a Sendable value. The handoff between the

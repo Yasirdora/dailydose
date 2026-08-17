@@ -84,14 +84,21 @@ struct NotificationPlannerTests {
 
     @Test("The plan never exceeds the system limit")
     func planStaysWithinSystemLimit() {
-        // Ten medications, four doses a day each — comfortably past 64 under
-        // the old scheme.
-        let medications = (0..<10).map { i in
+        // The default budget must fit iOS's ceiling by construction — assert
+        // that directly, so deleting the budget accounting trips this test.
+        #expect(NotificationPlanner.Budget.default.total <= NotificationPlanner.systemLimit)
+
+        // Sixteen medications, four DISTINCT times each: 64 dose demands
+        // against a 48-slot dose budget. Bundling cannot save us here — every
+        // instant is unique — so the ceiling is genuinely reached, and any
+        // leak past it fails.
+        let medications = (0..<16).map { i in
             Fixture.medication(
                 id: "med-\(i)", name: "Med \(i)",
                 schedule: Fixture.schedule(
                     kind: .daily,
-                    times: [Fixture.time(8), Fixture.time(12), Fixture.time(16), Fixture.time(20)],
+                    times: [Fixture.time(6, i), Fixture.time(10, i),
+                            Fixture.time(14, i), Fixture.time(18, i)],
                     start: Fixture.date(2026, 8, 1)
                 )
             )
@@ -99,15 +106,20 @@ struct NotificationPlannerTests {
 
         let result = plan(medications)
         #expect(result.notifications.count <= NotificationPlanner.systemLimit)
+        #expect(doseNotifications(result).count == NotificationPlanner.Budget.default.doses,
+                "Demand of 64 against a budget of 48 must fill the budget exactly")
+        #expect(!result.deferredMedicationIDs.isEmpty,
+                "The medications that didn't fit must be reported, not dropped silently")
     }
 
     @Test("Dose reminders stay inside their own allowance")
     func dosesRespectTheirBudget() {
+        // Distinct times again — 60 dose demands against an allowance of 20.
         let medications = (0..<30).map { i in
             Fixture.medication(
                 id: "med-\(i)", name: "Med \(i)",
                 schedule: Fixture.schedule(
-                    kind: .daily, times: [Fixture.time(8), Fixture.time(20)],
+                    kind: .daily, times: [Fixture.time(8, i % 30), Fixture.time(20, i % 30)],
                     start: Fixture.date(2026, 8, 1)
                 )
             )
@@ -115,7 +127,8 @@ struct NotificationPlannerTests {
         let budget = NotificationPlanner.Budget(doses: 20, followUps: 4, refills: 2)
         let result = plan(medications, budget: budget)
 
-        #expect(doseNotifications(result).count <= budget.doses)
+        #expect(doseNotifications(result).count == budget.doses,
+                "Demand of 60 against an allowance of 20 must fill it exactly, not merely stay under")
     }
 
     @Test("Medications that don't fit are reported, not silently dropped")

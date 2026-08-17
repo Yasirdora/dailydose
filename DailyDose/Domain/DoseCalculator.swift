@@ -198,40 +198,95 @@ struct DayProgress: Equatable, Sendable {
     var isComplete: Bool { total > 0 && taken == total }
 }
 
+/// The wall-clock identity of a dose: the local day and local time as the
+/// user experienced them — "the 8am dose of October 25th".
+///
+/// Absolute instants cannot identify a dose across a timezone change: the
+/// 08:00 Berlin dose and the 08:00 Los Angeles dose sit nine hours apart in
+/// absolute terms, yet they are the same dose in the only sense the record
+/// cares about. Matching on this key is what stops travel from fabricating
+/// a week of "missed" rows over doses that were taken — the failure the
+/// audit flagged and `TimezoneTravelTests` proved real.
+enum WallClock {
+    static func key(for date: Date, calendar: Calendar) -> String {
+        let c = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        return String(
+            format: "%04d-%02d-%02d|%02d:%02d",
+            c.year ?? 0, c.month ?? 0, c.day ?? 0, c.hour ?? 0, c.minute ?? 0
+        )
+    }
+}
+
 /// O(1) lookup of "did the user log this dose?".
 ///
 /// The previous implementation scanned a medication's entire event array for
 /// every dose on every render — quadratic in history size, and the reason the
 /// calendar sheet stalled after a few months of use. Building this index once
 /// per pass makes the same question constant-time.
+///
+/// Matching is by wall-clock identity (see `WallClock`): events written since
+/// V4 carry the key they were logged under, so a dose taken in Berlin still
+/// matches its occurrence after the phone lands in Los Angeles. Events from
+/// before V4 carry no key and are keyed in the reading calendar — the legacy
+/// behaviour, exact as long as the timezone has not changed since.
 struct LoggedEventIndex: Sendable {
-    /// Doses are matched to logs on a 60-second key, so a log recorded a few
-    /// milliseconds off the scheduled instant still matches. `TimeOfDay` being
-    /// a set guarantees two doses can never collide inside that window.
     private var storage: [Key: DoseStatus]
+    private let calendar: Calendar
 
     private struct Key: Hashable, Sendable {
         let medicationID: String
-        let minute: Int
+        let wallKey: String
     }
 
-    init(_ events: [(medicationID: String, scheduledAt: Date, status: DoseStatus)]) {
+    /// Test and legacy construction: keys are derived from each event's
+    /// absolute instant in `calendar`.
+    init(
+        _ events: [(medicationID: String, scheduledAt: Date, status: DoseStatus)],
+        calendar: Calendar = .current
+    ) {
+        self.calendar = calendar
         storage = [:]
         storage.reserveCapacity(events.count)
         for event in events {
-            storage[Key(medicationID: event.medicationID, minute: Self.minuteKey(event.scheduledAt))] = event.status
+            storage[Key(
+                medicationID: event.medicationID,
+                wallKey: WallClock.key(for: event.scheduledAt, calendar: calendar)
+            )] = event.status
+        }
+    }
+
+    /// The store's construction: events carry the wall-clock key they were
+    /// logged under, so timezone travel cannot unmoor them. An empty stored
+    /// key — every event written before V4 — falls back to deriving one in
+    /// the reading calendar, preserving the old behaviour for old data.
+    init(
+        keyedEvents: [(medicationID: String, scheduledAt: Date, wallKey: String, status: DoseStatus)],
+        calendar: Calendar = .current
+    ) {
+        self.calendar = calendar
+        storage = [:]
+        storage.reserveCapacity(keyedEvents.count)
+        for event in keyedEvents {
+            let key = event.wallKey.isEmpty
+                ? WallClock.key(for: event.scheduledAt, calendar: calendar)
+                : event.wallKey
+            storage[Key(medicationID: event.medicationID, wallKey: key)] = event.status
         }
     }
 
     static let empty = LoggedEventIndex([])
 
     func status(medicationID: String, scheduledAt: Date) -> DoseStatus? {
-        storage[Key(medicationID: medicationID, minute: Self.minuteKey(scheduledAt))]
+        storage[Key(
+            medicationID: medicationID,
+            wallKey: WallClock.key(for: scheduledAt, calendar: calendar)
+        )]
     }
 
-    /// Minutes since the reference date, rounded — the one key both the read
-    /// path (this index) and the write path (`DoseStore.existingEvent`) match
-    /// on, so they can never disagree about which dose a log belongs to.
+    /// Minutes since the reference date, rounded — still the *write* path's
+    /// key (`DoseStore.existingEvent`), where the question is "is there
+    /// already a row for this exact resolved instant", never "which dose does
+    /// this belong to across timezones".
     static func minuteKey(_ date: Date) -> Int {
         Int((date.timeIntervalSinceReferenceDate / 60).rounded())
     }

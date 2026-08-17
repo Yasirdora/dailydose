@@ -26,6 +26,13 @@ final class DoseEvent {
     /// When the dose was *due*. Every adherence figure in the app is measured
     /// against this, never against `loggedAt` — see `AdherenceCalculator`.
     var scheduledAt: Date
+    /// The dose's wall-clock identity — "2026-10-25|08:00" — captured in the
+    /// timezone the user was in when this was logged. Absolute instants drift
+    /// under timezone travel; this key is what lets a dose taken in Berlin
+    /// still match its schedule after the phone lands in Los Angeles.
+    /// Empty on rows written before V4; the read path derives a key for them
+    /// in the current calendar, preserving the old behaviour for old data.
+    var scheduledWallKey: String = ""
     /// When the user (or the missed-dose sweep) actually recorded it. Kept for
     /// provenance and for "logged 3 hours late" style detail, never for stats.
     var loggedAt: Date
@@ -38,12 +45,21 @@ final class DoseEvent {
         set { statusRaw = newValue.rawValue }
     }
 
-    init(medication: Medication, scheduledAt: Date, status: DoseStatus, loggedAt: Date = .now) {
+    init(
+        medication: Medication,
+        scheduledAt: Date,
+        status: DoseStatus,
+        loggedAt: Date = .now,
+        wallKey: String = ""
+    ) {
         self.medication = medication
         self.medicationID = medication.id
         self.medicationName = medication.displayName
         self.medicationColorName = medication.colorName
         self.scheduledAt = scheduledAt
+        self.scheduledWallKey = wallKey.isEmpty
+            ? WallClock.key(for: scheduledAt, calendar: .current)
+            : wallKey
         self.statusRaw = status.rawValue
         self.loggedAt = loggedAt
     }
@@ -55,13 +71,15 @@ final class DoseEvent {
         medicationColorName: String,
         scheduledAt: Date,
         status: DoseStatus,
-        loggedAt: Date
+        loggedAt: Date,
+        wallKey: String = ""
     ) {
         self.medication = nil
         self.medicationID = medicationID
         self.medicationName = medicationName
         self.medicationColorName = medicationColorName
         self.scheduledAt = scheduledAt
+        self.scheduledWallKey = wallKey
         self.statusRaw = status.rawValue
         self.loggedAt = loggedAt
     }

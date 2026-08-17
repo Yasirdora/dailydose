@@ -15,22 +15,30 @@ struct DoseCalculatorTests {
 
     @Test("A dose becomes due 15 minutes before its time")
     func dueGrace() {
+        // Literal clock times at the boundary: deriving the inputs from
+        // DoseCalculator.dueGrace means a change to the constant moves the
+        // test with it and nothing is asserted. The pin on the constant
+        // itself is the tripwire.
+        #expect(DoseCalculator.dueGrace == 900)
         let scheduled = Fixture.date(2026, 8, 12, 8)
-        let justBefore = scheduled.addingTimeInterval(-DoseCalculator.dueGrace + 60)
-        let wellBefore = scheduled.addingTimeInterval(-3600)
 
-        #expect(DoseCalculator.state(for: "m", at: scheduled, events: .empty, now: justBefore) == .due)
-        #expect(DoseCalculator.state(for: "m", at: scheduled, events: .empty, now: wellBefore) == .upcoming)
+        #expect(DoseCalculator.state(for: "m", at: scheduled, events: .empty,
+                                     now: Fixture.date(2026, 8, 12, 7, 44)) == .upcoming)
+        #expect(DoseCalculator.state(for: "m", at: scheduled, events: .empty,
+                                     now: Fixture.date(2026, 8, 12, 7, 46)) == .due)
+        #expect(DoseCalculator.state(for: "m", at: scheduled, events: .empty,
+                                     now: Fixture.date(2026, 8, 12, 8, 0)) == .due)
     }
 
     @Test("A dose stays actionable for two hours, then goes overdue")
     func missWindow() {
+        #expect(DoseCalculator.missWindow == 7_200)
         let scheduled = Fixture.date(2026, 8, 12, 8)
-        let stillDue = scheduled.addingTimeInterval(DoseCalculator.missWindow - 60)
-        let tooLate = scheduled.addingTimeInterval(DoseCalculator.missWindow + 60)
 
-        #expect(DoseCalculator.state(for: "m", at: scheduled, events: .empty, now: stillDue) == .due)
-        #expect(DoseCalculator.state(for: "m", at: scheduled, events: .empty, now: tooLate) == .overdue)
+        #expect(DoseCalculator.state(for: "m", at: scheduled, events: .empty,
+                                     now: Fixture.date(2026, 8, 12, 9, 59)) == .due)
+        #expect(DoseCalculator.state(for: "m", at: scheduled, events: .empty,
+                                     now: Fixture.date(2026, 8, 12, 10, 1)) == .overdue)
     }
 
     @Test("A logged dose keeps its status regardless of the clock")

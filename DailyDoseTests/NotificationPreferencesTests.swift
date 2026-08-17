@@ -333,10 +333,15 @@ struct NotificationVolumeTests {
 
     @Test("The plan still respects the system limit")
     func systemLimitStillRespected() {
+        // Distinct times per medication: sharing times lets bundling collapse
+        // demand and the assertion passes without the budget doing any work.
         let meds = (0..<30).map { i in
-            medication("med-\(i)", times: [Fixture.time(7 + (i % 12)), Fixture.time(19)])
+            medication("med-\(i)", times: [Fixture.time(7, i), Fixture.time(19, i)])
         }
-        #expect(plan(meds).notifications.count <= NotificationPlanner.systemLimit)
+        let result = plan(meds)
+        #expect(result.notifications.count <= NotificationPlanner.systemLimit)
+        #expect(!result.deferredMedicationIDs.isEmpty,
+                "60 distinct dose demands must saturate the budget — otherwise this test proves nothing")
     }
 
     @Test("Identifiers stay unique and ASCII, including bundles")
@@ -358,13 +363,20 @@ struct NotificationVolumeTests {
 struct NotificationSoundTests {
 
     @Test("Every sound except None resolves to a bundled file")
-    func soundsMapToFiles() {
+    func soundsMapToFiles() throws {
         // iOS cannot reference Apple's own tones from a third-party app, so each
         // of these must correspond to a WAV shipped in the bundle. A typo here
         // is silent at runtime — iOS just falls back to the default tone.
+        // Assert the file is actually reachable in the app bundle (the tests
+        // are app-hosted, so Bundle.main is the app), not merely that the name
+        // is computed the same way the implementation computes it.
         for sound in NotificationSound.allCases where sound != .none {
-            let file = try? #require(sound.fileName)
-            #expect(file == "\(sound.rawValue).wav")
+            let file = try #require(sound.fileName)
+            let resource = file.hasSuffix(".wav") ? String(file.dropLast(4)) : file
+            #expect(
+                Bundle.main.url(forResource: resource, withExtension: "wav") != nil,
+                "\(file) is named but not shipped — iOS will silently play the default tone"
+            )
         }
         #expect(NotificationSound.none.fileName == nil)
     }

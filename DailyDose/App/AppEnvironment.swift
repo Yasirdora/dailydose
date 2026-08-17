@@ -36,7 +36,7 @@ final class AppEnvironment {
     private(set) var status: Status
 
     init() {
-        let schema = Schema(versionedSchema: DailyDoseSchemaV3.self)
+        let schema = Schema(versionedSchema: DailyDoseSchemaV4.self)
         var status: Status = .ready
         var container: ModelContainer
 
@@ -189,7 +189,7 @@ final class AppEnvironment {
     func startFresh() {
         guard case .degraded = status else { return }
 
-        let schema = Schema(versionedSchema: DailyDoseSchemaV3.self)
+        let schema = Schema(versionedSchema: DailyDoseSchemaV4.self)
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
         // The scratch container holds no file handle, so the corrupt store can
