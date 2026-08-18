@@ -100,7 +100,13 @@ struct WeekPager: View {
     /// Live finger translation, in points. Zero means the current week sits
     /// centred; ±width means a neighbour fully covers it.
     @State private var drag: CGFloat = 0
-    @State private var width: CGFloat = 0
+    /// The strip's height, measured once it exists. Strip height does not
+    /// depend on width, so caching it survives rotation — unlike width,
+    /// which is read fresh from the GeometryReader on every layout pass.
+    /// Caching width was the rotation bug: after turning the phone, the
+    /// strips kept the old orientation's offsets and the week sat parked
+    /// off-centre.
+    @State private var stripHeight: CGFloat = 88
     /// Set while the commit spring is playing, so a second grab can't fight it.
     @State private var isCommitting = false
 
@@ -111,22 +117,29 @@ struct WeekPager: View {
             days.first.map { ($0.date, days) }
         }
 
-        ZStack {
-            ForEach(Array(weeks.enumerated()), id: \.element.start) { index, week in
-                WeekStrip(days: week.days) { date in
-                    select(date)
+        GeometryReader { geo in
+            let width = geo.size.width
+            ZStack(alignment: .leading) {
+                ForEach(Array(weeks.enumerated()), id: \.element.start) { index, week in
+                    WeekStrip(days: week.days) { date in
+                        select(date)
+                    }
+                    .frame(width: width)
+                    .offset(x: CGFloat(index - 1) * width + drag)
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) {
+                        stripHeight = $0
+                    }
                 }
-                .frame(width: width)
-                .offset(x: CGFloat(index - 1) * width + drag)
             }
+            .frame(width: width, alignment: .leading)
+            .clipped()
+            .contentShape(.rect)
+            .gesture(dragGesture(width: width))
         }
-        .frame(maxWidth: .infinity)
-        .clipped()
-        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width = $0 }
-        .gesture(dragGesture)
+        .frame(height: stripHeight)
     }
 
-    private var dragGesture: some Gesture {
+    private func dragGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 12, coordinateSpace: .local)
             .onChanged { value in
                 guard !isCommitting else { return }
@@ -136,9 +149,9 @@ struct WeekPager: View {
                 guard !isCommitting, width > 0 else { return }
                 let predicted = value.predictedEndTranslation.width
                 if predicted <= -width / 2 {
-                    commit(1)       // flung or dragged left → next week
+                    commit(1, width: width)       // flung or dragged left → next week
                 } else if predicted >= width / 2 {
-                    commit(-1)      // right → previous week
+                    commit(-1, width: width)      // right → previous week
                 } else {
                     withAnimation(settle) { drag = 0 }
                 }
@@ -148,7 +161,7 @@ struct WeekPager: View {
     /// Slides the strip fully aside with a spring, then — once the motion is
     /// logically complete — shifts the selected day by a week and resets the
     /// offset without animation. At rest, over identical content.
-    private func commit(_ direction: Int) {
+    private func commit(_ direction: Int, width: CGFloat) {
         isCommitting = true
         withAnimation(settle, completionCriteria: .logicallyComplete) {
             drag = direction == 1 ? -width : width
