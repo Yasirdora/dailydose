@@ -182,7 +182,9 @@ struct MedicationEditor: View {
     /// divider exactly where a native one would sit.
     /// One height for every interactive row in this sheet. Declared once,
     /// applied everywhere — uniformity by construction, not approximation.
-    private var editorRowHeight: CGFloat { 48 }
+    /// 56pt: generous enough for an 80-year-old's thumb, calm enough to
+    /// stack five deep without towering.
+    private var editorRowHeight: CGFloat { 56 }
 
     private var detailsSection: some View {
         cardSection(String(localized: "Medication"), footer: medicationFooter) {
@@ -225,7 +227,7 @@ struct MedicationEditor: View {
                 // alive — lives here, where the choice is made: pick a form,
                 // the glyph appears; change the colour below, it repaints.
                 HStack(spacing: 12) {
-                    MedicationTile(color: draft.color, form: draft.form, size: 28)
+                    MedicationTile(color: draft.color, form: draft.form, size: 32)
                     Text(String(localized: "Form"))
                         .foregroundStyle(.primary)
                     Spacer(minLength: 12)
@@ -469,15 +471,15 @@ struct MedicationEditor: View {
                     } label: {
                         Circle()
                             .fill(swatch.color)
-                            .frame(width: 34, height: 34)
+                            .frame(width: 38, height: 38)
                             .overlay {
                                 if draft.color == swatch {
                                     Circle()
                                         .strokeBorder(Color.primary.opacity(0.5), lineWidth: 2.5)
-                                        .frame(width: 44, height: 44)
+                                        .frame(width: 48, height: 48)
                                 }
                             }
-                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .frame(maxWidth: .infinity, minHeight: 52)
                             .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
@@ -632,8 +634,8 @@ private struct WeekdayPicker: View {
                     Haptics.select()
                 } label: {
                     Text(symbols[weekday - 1])
-                        .font(.caption.weight(.semibold))
-                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 40)
                         .background(
                             isOn ? Theme.accent : Color(.tertiarySystemFill),
                             in: .rect(cornerRadius: 8, style: .continuous)
@@ -685,7 +687,7 @@ private struct FrequencyPicker: View {
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(.tertiary)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .frame(maxWidth: .infinity, minHeight: 52)
                         .contentShape(.rect)
                     }
                     .buttonStyle(SoftPressButtonStyle())
@@ -740,7 +742,7 @@ private struct FrequencyPicker: View {
                         .foregroundStyle(Theme.accent)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 52)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -778,7 +780,7 @@ private struct MoreSchedulesPicker: View {
                         .foregroundStyle(Theme.accent)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 52)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -820,8 +822,8 @@ private struct EditorSummaryRow: View {
             }
         }
         .padding(.horizontal, 16)
-        // 48 — the sheet's single row height, shared with every other row.
-        .frame(maxWidth: .infinity, minHeight: 48)
+        // 56 — the sheet's single row height, shared with every other row.
+        .frame(maxWidth: .infinity, minHeight: 56)
         .contentShape(.rect)
     }
 
@@ -950,7 +952,7 @@ private struct FormPicker: View {
                         .foregroundStyle(Theme.accent)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 52)
             .contentShape(.rect)
         }
         .buttonStyle(SoftPressButtonStyle())
