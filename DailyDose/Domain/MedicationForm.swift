@@ -7,20 +7,19 @@ import Foundation
 /// honesty of refill forecasting — an inhaler that "runs out Friday" means
 /// something different from a pill box.
 ///
+/// Form is *optional* and there is no silent default: an empty raw value
+/// means "the user never said", and the UI shows a neutral medical glyph
+/// rather than claiming pill. Auto-detection (`detect(in:)`) only fires on
+/// words a label actually prints — "tablets", "inhaler" — and even then the
+/// user sees and can change the result.
+///
 /// Stored raw so a future case can be added without a migration, and unknown
-/// values — from newer builds, backups, or imports — fall back to `.pill`
+/// values — from newer builds, backups, or imports — read as unspecified
 /// rather than crashing a screen that only wanted an icon.
 enum MedicationForm: String, CaseIterable, Identifiable, Sendable {
     case pill, capsule, liquid, drops, injection, inhaler, powder, patch, other
 
     var id: String { rawValue }
-
-    static let `default` = MedicationForm.pill
-
-    /// Tolerates empty (pre-V5 rows) and unknown values alike.
-    static func named(_ raw: String) -> MedicationForm {
-        MedicationForm(rawValue: raw) ?? .default
-    }
 
     var displayName: String {
         switch self {
@@ -77,5 +76,37 @@ enum MedicationForm: String, CaseIterable, Identifiable, Sendable {
         case .other:
             count == 1 ? String(localized: "dose") : String(localized: "doses")
         }
+    }
+
+    /// The unit for a medication whose form is unspecified: the neutral
+    /// "dose(s)", because guessing a unit would be a lie with a number in it.
+    static func supplyUnit(form: MedicationForm?, count: Int) -> String {
+        (form ?? .other).supplyUnit(count: count)
+    }
+
+    /// Detects the form from words a pharmacy label actually prints.
+    ///
+    /// Deliberately conservative: it only fires on explicit form words
+    /// ("tablets", "inhaler", "eye drops") and returns nil the moment nothing
+    /// certain is said. A nil here means "ask the user" — never "assume pill".
+    /// Order matters: the more specific word wins ("ophthalmic drops" is
+    /// drops, not liquid; "transdermal patch" is a patch).
+    static func detect(in text: String) -> MedicationForm? {
+        let flat = text.lowercased()
+        guard !flat.isEmpty else { return nil }
+        let table: [(MedicationForm, [String])] = [
+            (.patch, ["patch", "transdermal"]),
+            (.injection, ["injection", "injectable", "syringe", "vial", "ampoule"]),
+            (.inhaler, ["inhaler", "inhalation", "aerosol", "puffer"]),
+            (.drops, ["drop"]),
+            (.capsule, ["capsule", "caplet"]),
+            (.powder, ["powder", "sachet", "granule"]),
+            (.liquid, ["syrup", "suspension", "solution", "liquid", "elixir", "spray", "cream", "ointment", "gel", "lotion"]),
+            (.pill, ["tablet", "pill", "tabs"]),
+        ]
+        for (form, keywords) in table {
+            if keywords.contains(where: { flat.contains($0) }) { return form }
+        }
+        return nil
     }
 }

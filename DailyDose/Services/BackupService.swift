@@ -203,7 +203,7 @@ enum BackupService {
                     schedule: schedule,
                     pillsRemaining: record.pillsRemaining,
                     refillThreshold: record.refillThreshold,
-                    form: MedicationForm.named(record.formRaw ?? ""),
+                    form: record.formRaw.flatMap { MedicationForm(rawValue: $0) },
                     isActive: record.isActive,
                     createdAt: record.createdAt
                 )

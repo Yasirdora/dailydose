@@ -11,8 +11,12 @@ enum LabelScanParser {
     struct Result: Equatable, Sendable {
         var name: String
         var strength: String
+        /// The form the label itself declared ("tablets", "inhaler"), or nil
+        /// when the label said nothing certain. A suggestion to confirm,
+        /// never a fact to impose.
+        var detectedForm: MedicationForm?
 
-        static let empty = Result(name: "", strength: "")
+        static let empty = Result(name: "", strength: "", detectedForm: nil)
         var isEmpty: Bool { name.isEmpty && strength.isEmpty }
     }
 
@@ -42,12 +46,16 @@ enum LabelScanParser {
         // label reading "PANADOL / EACH TABLET / CONTAINS" becomes one string.
         let text = raw.singleLine
         guard !text.isEmpty else { return .empty }
+        // The whole label is scanned for form words, not just the part near
+        // the strength — "EACH TABLET CONTAINS" declares the form as surely
+        // as "500 mg tablets" does.
+        let detectedForm = MedicationForm.detect(in: text)
 
         guard let strengthRegex,
               let match = strengthRegex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range, in: text)
         else {
-            return Result(name: prettifyName(text), strength: "")
+            return Result(name: prettifyName(text), strength: "", detectedForm: detectedForm)
         }
 
         var strength = String(text[range])
@@ -67,7 +75,8 @@ enum LabelScanParser {
         )
         return Result(
             name: prettifyName(trimmedName.isEmpty ? text : trimmedName),
-            strength: normalizeStrength(strength)
+            strength: normalizeStrength(strength),
+            detectedForm: detectedForm
         )
     }
 

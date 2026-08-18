@@ -277,9 +277,10 @@ struct MigrationTests {
         let migrated = try #require(medications.first)
         #expect(migrated.id == "v4-id-1")
         #expect(migrated.pillsRemaining == 60)
-        // Pre-form rows read as the default form, never as a crash or a blank tile.
+        // Pre-form rows read as unspecified, never as a crash, a blank
+        // tile — or an assumed pill.
         #expect(migrated.formRaw == "")
-        #expect(migrated.form == .pill)
+        #expect(migrated.form == nil)
 
         #expect(events.count == 1)
         #expect(events.first?.medicationName == "Metformin")

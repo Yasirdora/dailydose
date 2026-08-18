@@ -493,7 +493,7 @@ enum NotificationPlanner {
             else { continue }
 
             let remaining = medication.pillsRemaining ?? 0
-            let unit = medication.form.supplyUnit(count: remaining)
+            let unit = MedicationForm.supplyUnit(form: medication.form, count: remaining)
             notifications.append(
                 PlannedNotification(
                     id: "refill-\(medication.id)",

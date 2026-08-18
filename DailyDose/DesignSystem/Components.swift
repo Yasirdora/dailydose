@@ -8,7 +8,9 @@ import SwiftUI
 /// a 48pt square next to 40pt text at accessibility sizes.
 struct MedicationTile: View {
     let color: MedicationColor
-    var form: MedicationForm = .pill
+    /// Nil when the user never said what form it is — the tile then shows a
+    /// neutral medical glyph instead of claiming pill.
+    var form: MedicationForm? = nil
     var size: CGFloat = 48
     var badge: Badge?
 
@@ -41,7 +43,9 @@ struct MedicationTile: View {
             .fill(color.color.gradient)
             .frame(width: resolved, height: resolved)
             .overlay {
-                Image(systemName: form.systemImage)
+                // Unspecified form gets the neutral medical case, not an
+                // assumed pill — an honest "you haven't told me yet".
+                Image(systemName: form?.systemImage ?? "cross.case.fill")
                     .font(.system(size: resolved * 0.38))
                     // Contrast-correct against this specific swatch, not
                     // assumed white.

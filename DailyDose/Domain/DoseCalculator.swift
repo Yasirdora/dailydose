@@ -311,7 +311,8 @@ struct MedicationSnapshot: Identifiable, Equatable, Sendable {
     /// medication should not arrive with the same urgency.
     var importance: MedicationImportance = .standard
     /// Physical form — drives the tile glyph and the supply unit language.
-    var form: MedicationForm = .default
+    /// Nil means the user never said; the UI shows a neutral glyph, not a lie.
+    var form: MedicationForm? = nil
 
     var isLowOnSupply: Bool {
         guard let pillsRemaining, let refillThreshold else { return false }

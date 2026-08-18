@@ -137,9 +137,12 @@ struct MedicationEditor: View {
             TextField(String(localized: "Strength or dose (e.g. 500 mg, 1 tablet)"), text: $draft.doseDetail)
 
             Button { route = .form } label: {
+                // Unchosen reads as an invitation, not an assumption. If the
+                // label scan detected the form it appears here, pre-marked
+                // but still the user's to change.
                 EditorSummaryRow(
                     label: String(localized: "Form"),
-                    value: draft.form.displayName
+                    value: draft.form?.displayName ?? String(localized: "Choose")
                 )
             }
             .buttonStyle(SoftPressButtonStyle())
@@ -406,20 +409,24 @@ struct MedicationEditor: View {
 
     private func save() {
         guard let store, let schedule = draft.buildSchedule() else { return }
+        // resolvedForm: the user's choice, else a confident detection from
+        // the entry's own words ("…inhaler"), else unspecified. Never an
+        // assumed pill — a wrong glyph is worse than a neutral one.
+        let form = draft.resolvedForm
         if let medication {
             store.update(
                 medication,
                 name: draft.name, doseDetail: draft.doseDetail, notes: draft.notes,
                 colorName: draft.color.rawValue, schedule: schedule,
                 pillsRemaining: draft.resolvedPills, refillThreshold: draft.resolvedThreshold,
-                importance: draft.importance, form: draft.form
+                importance: draft.importance, form: form
             )
         } else {
             store.add(
                 name: draft.name, doseDetail: draft.doseDetail, notes: draft.notes,
                 colorName: draft.color.rawValue, schedule: schedule,
                 pillsRemaining: draft.resolvedPills, refillThreshold: draft.resolvedThreshold,
-                importance: draft.importance, form: draft.form
+                importance: draft.importance, form: form
             )
         }
         Haptics.success()
@@ -721,7 +728,7 @@ private struct DurationPicker: View {
 /// speaks in. Like the frequency picker, selection stays open with a
 /// checkmark; the user leaves through Done, on their own terms.
 private struct FormPicker: View {
-    @Binding var selection: MedicationForm
+    @Binding var selection: MedicationForm?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {

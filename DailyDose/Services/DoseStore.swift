@@ -229,7 +229,7 @@ final class DoseStore {
         pillsRemaining: Int?,
         refillThreshold: Int?,
         importance: MedicationImportance = .standard,
-        form: MedicationForm = .default
+        form: MedicationForm? = nil
     ) -> Medication {
         let medication = Medication(
             name: name.singleLine,
@@ -258,7 +258,7 @@ final class DoseStore {
         pillsRemaining: Int?,
         refillThreshold: Int?,
         importance: MedicationImportance = .standard,
-        form: MedicationForm = .default
+        form: MedicationForm? = nil
     ) {
         medication.name = name.singleLine
         medication.doseDetail = doseDetail.singleLine

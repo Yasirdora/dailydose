@@ -11,7 +11,9 @@ struct MedicationDraft: Equatable {
     var notes = ""
     var color = MedicationColor.default
     /// Physical form — drives the tile glyph and the supply unit language.
-    var form = MedicationForm.default
+    /// Nil until the user chooses (or a label declares it): there is no
+    /// silent pill default, because a wrong icon is worse than a neutral one.
+    var form: MedicationForm?
 
     var kind: ScheduleKind = .daily
     /// A `Set`, so two doses can never occupy the same minute — the condition
@@ -48,6 +50,9 @@ struct MedicationDraft: Equatable {
             if let prefill {
                 name = prefill.name
                 doseDetail = prefill.strength
+                // A label that says "tablets" may pre-select the form; the
+                // user still sees it in the picker and can overrule it.
+                form = prefill.detectedForm
             }
             return
         }
@@ -150,7 +155,21 @@ struct MedicationDraft: Equatable {
     mutating func apply(_ result: LabelScanParser.Result) {
         if !result.name.isEmpty { name = result.name }
         if !result.strength.isEmpty { doseDetail = result.strength }
+        // A scan never overrules a form the user already chose.
+        if form == nil, let detected = result.detectedForm { form = detected }
     }
+
+    /// The form the entry itself declares, for when the user never opened the
+    /// picker: "Ventolin Inhaler" says inhaler in its own name. Conservative —
+    /// fires only on explicit form words, nil when nothing certain is said.
+    var detectedForm: MedicationForm? {
+        MedicationForm.detect(in: "\(name) \(doseDetail)")
+    }
+
+    /// What gets saved: the user's choice if there is one, else a confident
+    /// detection from the entry's own words, else unspecified — never an
+    /// assumed pill.
+    var resolvedForm: MedicationForm? { form ?? detectedForm }
 
     // MARK: - Output
 

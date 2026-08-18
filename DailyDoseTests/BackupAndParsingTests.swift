@@ -238,6 +238,16 @@ struct LabelScanParserTests {
         #expect(LabelScanParser.parse("IBUPROFEN 400MG CAPSULES").strength.contains("400"))
         #expect(LabelScanParser.parse("IBUPROFEN 400 MG CAPSULES").strength == "400 mg capsules")
     }
+
+    @Test("The label's own form words are detected — and silence stays silence")
+    func detectsForm() {
+        #expect(LabelScanParser.parse("METFORMIN HCL 500 MG TABLET").detectedForm == .pill)
+        #expect(LabelScanParser.parse("IBUPROFEN 400 MG CAPSULES").detectedForm == .capsule)
+        #expect(LabelScanParser.parse("PANADOL\nEACH TABLET\nCONTAINS 500 MG").detectedForm == .pill)
+        #expect(LabelScanParser.parse("VENTOLIN INHALER 100 MCG").detectedForm == .inhaler)
+        // A label that declares no form yields no guess.
+        #expect(LabelScanParser.parse("ASPIRIN").detectedForm == nil)
+    }
 }
 
 @Suite("Medication draft")

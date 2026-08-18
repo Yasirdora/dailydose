@@ -154,7 +154,7 @@ struct MedicationDetailView: View {
                     .contentTransition(.numericText())
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(String(localized: "\(medication.form.supplyUnit(count: medication.pillsRemaining ?? 0)) left")).font(.subheadline)
+                    Text(String(localized: "\(MedicationForm.supplyUnit(form: medication.form, count: medication.pillsRemaining ?? 0)) left")).font(.subheadline)
                     if let threshold = medication.refillThreshold {
                         Text(String(localized: "warns at \(threshold)"))
                             .font(.caption)

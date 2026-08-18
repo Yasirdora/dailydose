@@ -544,7 +544,7 @@ private struct RefillCard: View {
                 .foregroundStyle(Theme.due)
             ForEach(medications) { medication in
                 let remaining = medication.pillsRemaining ?? 0
-                Text(String(localized: "\(medication.name) — \(remaining) \(medication.form.supplyUnit(count: remaining)) left"))
+                Text(String(localized: "\(medication.name) — \(remaining) \(MedicationForm.supplyUnit(form: medication.form, count: remaining)) left"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
