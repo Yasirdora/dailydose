@@ -30,16 +30,37 @@ struct MedicationEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                detailsSection
-                scheduleSection
-                moreOptionsSection
+            VStack(spacing: 0) {
+                // The fast path floats above every field, outside both
+                // cards: field-sized (44pt, like everything else), quiet
+                // tinted glass — visible on the dark page precisely because
+                // it carries the accent. Untinted glass over near-black is
+                // how it went invisible once; never again.
+                if LabelScannerSheet.isAvailable {
+                    Button { route = .scanner } label: {
+                        Label(String(localized: "Scan Medication"), systemImage: "camera.viewfinder")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .contentShape(.rect)
+                    }
+                    .secondaryButton()
+                    .tint(Theme.accent)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .accessibilityHint(String(localized: "Opens the camera to read the bottle's label"))
+                }
 
-                if showsMoreOptions {
-                    notesSection
-                    supplySection
-                    remindersSection
-                    colorSection
+                Form {
+                    detailsSection
+                    scheduleSection
+                    moreOptionsSection
+
+                    if showsMoreOptions {
+                        notesSection
+                        supplySection
+                        remindersSection
+                        colorSection
+                    }
                 }
             }
             .navigationTitle(medication == nil
@@ -157,22 +178,6 @@ struct MedicationEditor: View {
     private var detailsSection: some View {
         Section {
             VStack(spacing: 0) {
-                // The fast path, first, in the quiet glass she already
-                // called beautiful: full-width, camera glyph, nothing louder.
-                if LabelScannerSheet.isAvailable {
-                    Button { route = .scanner } label: {
-                        Label(String(localized: "Scan Medication"), systemImage: "camera.viewfinder")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .contentShape(.rect)
-                    }
-                    .secondaryButton()
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .accessibilityHint(String(localized: "Opens the camera to read the bottle's label"))
-                    rowDivider
-                }
-
                 editorRow {
                     TextField(String(localized: "Medication name"), text: $draft.name)
                         .textInputAutocapitalization(.words)
@@ -248,90 +253,125 @@ struct MedicationEditor: View {
         }
     }
 
+    /// Hand-built like the Medication card: one VStack, explicit dividers,
+    /// every row 44pt. Two cards, one set of metrics — uniformity by
+    /// construction, not by approximation.
     private var scheduleSection: some View {
         Section {
-            Button { route = .frequency } label: {
-                EditorSummaryRow(
-                    label: String(localized: "How often"),
-                    value: draft.frequencySummary
-                )
-            }
-            .buttonStyle(SoftPressButtonStyle())
-            .accessibilityHint(String(localized: "Choose how often this medication is taken"))
+            VStack(spacing: 0) {
+                Button { route = .frequency } label: {
+                    EditorSummaryRow(
+                        label: String(localized: "How often"),
+                        value: draft.frequencySummary
+                    )
+                }
+                .buttonStyle(SoftPressButtonStyle())
+                .accessibilityHint(String(localized: "Choose how often this medication is taken"))
 
-            if draft.kind == .everyXDays {
-                Stepper(value: $draft.intervalDays, in: 1...90) {
-                    LabeledContent(String(localized: "Repeat every")) {
-                        Text(daysCopy(draft.intervalDays))
-                            .foregroundStyle(.secondary)
+                if draft.kind == .everyXDays {
+                    rowDivider
+                    editorRow {
+                        Stepper(value: $draft.intervalDays, in: 1...90) {
+                            LabeledContent(String(localized: "Repeat every")) {
+                                Text(daysCopy(draft.intervalDays))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
-            }
 
-            if draft.kind == .everyXHours {
-                Stepper(value: $draft.intervalHours, in: 1...24) {
-                    LabeledContent(String(localized: "Repeat every")) {
-                        Text(hoursCopy(draft.intervalHours))
-                            .foregroundStyle(.secondary)
+                if draft.kind == .everyXHours {
+                    rowDivider
+                    editorRow {
+                        Stepper(value: $draft.intervalHours, in: 1...24) {
+                            LabeledContent(String(localized: "Repeat every")) {
+                                Text(hoursCopy(draft.intervalHours))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
-            }
 
-            if draft.kind == .cycle {
-                Stepper(value: $draft.cycleOnDays, in: 1...90) {
-                    LabeledContent(String(localized: "Take for")) {
-                        Text(daysCopy(draft.cycleOnDays))
-                            .foregroundStyle(.secondary)
+                if draft.kind == .cycle {
+                    rowDivider
+                    editorRow {
+                        Stepper(value: $draft.cycleOnDays, in: 1...90) {
+                            LabeledContent(String(localized: "Take for")) {
+                                Text(daysCopy(draft.cycleOnDays))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    rowDivider
+                    editorRow {
+                        Stepper(value: $draft.cycleOffDays, in: 1...30) {
+                            LabeledContent(String(localized: "Then pause for")) {
+                                Text(daysCopy(draft.cycleOffDays))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
-                Stepper(value: $draft.cycleOffDays, in: 1...30) {
-                    LabeledContent(String(localized: "Then pause for")) {
-                        Text(daysCopy(draft.cycleOffDays))
-                            .foregroundStyle(.secondary)
+
+                if draft.kind == .weekdays {
+                    rowDivider
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(String(localized: "Which days?"))
+                            .font(.subheadline.weight(.medium))
+                        WeekdayPicker(selection: $draft.weekdays)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if draft.kind == .monthly {
+                    rowDivider
+                    editorRow {
+                        Picker(String(localized: "Day of month"), selection: $draft.dayOfMonth) {
+                            ForEach(1...31, id: \.self) { day in
+                                Text(day.ordinalString()).tag(day)
+                            }
+                        }
                     }
                 }
-            }
 
-            if draft.kind == .weekdays {
-                Text(String(localized: "Which days?"))
-                    .font(.subheadline.weight(.medium))
-                WeekdayPicker(selection: $draft.weekdays)
-            }
-
-            if draft.kind == .monthly {
-                Picker(String(localized: "Day of month"), selection: $draft.dayOfMonth) {
-                    ForEach(1...31, id: \.self) { day in
-                        Text(day.ordinalString()).tag(day)
+                ForEach(Array(draft.times.sorted().enumerated()), id: \.element) { index, time in
+                    rowDivider
+                    editorRow {
+                        DatePicker(
+                            draft.kind == .everyXHours
+                                ? String(localized: "Starting at")
+                                : draft.times.count == 1
+                                    ? String(localized: "Time")
+                                    : String(localized: "Time \(index + 1)"),
+                            selection: binding(for: time),
+                            displayedComponents: .hourAndMinute
+                        )
                     }
                 }
-            }
 
-            ForEach(Array(draft.times.sorted().enumerated()), id: \.element) { index, time in
-                DatePicker(
-                    draft.kind == .everyXHours
-                        ? String(localized: "Starting at")
-                        : draft.times.count == 1
-                            ? String(localized: "Time")
-                            : String(localized: "Time \(index + 1)"),
-                    selection: binding(for: time),
-                    displayedComponents: .hourAndMinute
-                )
-            }
+                rowDivider
+                editorRow {
+                    DatePicker(
+                        String(localized: "Starts"),
+                        selection: $draft.startDate,
+                        displayedComponents: .date
+                    )
+                }
 
-            DatePicker(
-                String(localized: "Starts"),
-                selection: $draft.startDate,
-                displayedComponents: .date
-            )
-
-            Button { route = .duration } label: {
-                EditorSummaryRow(
-                    label: String(localized: "Ends"),
-                    value: draft.durationSummary
-                )
+                rowDivider
+                Button { route = .duration } label: {
+                    EditorSummaryRow(
+                        label: String(localized: "Ends"),
+                        value: draft.durationSummary
+                    )
+                }
+                .buttonStyle(SoftPressButtonStyle())
+                .accessibilityHint(String(localized: "Choose whether this medication has an end date"))
             }
-            .buttonStyle(SoftPressButtonStyle())
-            .accessibilityHint(String(localized: "Choose whether this medication has an end date"))
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
         } header: {
             Text(String(localized: "Schedule"))
         } footer: {
@@ -380,7 +420,7 @@ struct MedicationEditor: View {
                         .foregroundStyle(.tertiary)
                         .rotationEffect(.degrees(showsMoreOptions ? 180 : 0))
                 }
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(.rect)
             }
             .buttonStyle(SoftPressButtonStyle())
@@ -740,6 +780,7 @@ private struct EditorSummaryRow: View {
                 }
             }
         }
+        .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, minHeight: 44)
         .contentShape(.rect)
     }
