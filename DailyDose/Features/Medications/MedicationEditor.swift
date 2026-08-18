@@ -120,6 +120,16 @@ struct MedicationEditor: View {
         }
     }
 
+    /// The unit selector appears only once there is a number to qualify —
+    /// options exactly when they become relevant, never before.
+    private var showsStrengthUnit: Bool {
+        !draft.strengthText.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private var showsIntakeUnit: Bool {
+        !draft.intakeText.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     private var detailsSection: some View {
         Section {
             if LabelScannerSheet.isAvailable {
@@ -135,16 +145,14 @@ struct MedicationEditor: View {
             TextField(String(localized: "Medication name"), text: $draft.name)
                 .textInputAutocapitalization(.words)
 
-            // Strength and per-dose amount, as structure: a number, a unit
-            // from a list of six, and an intake whose unit the form already
-            // answered. Everything optional — "the blue pill, one in the
-            // morning" is always enough to save.
-            LabeledContent(String(localized: "Strength")) {
-                HStack(spacing: 8) {
-                    TextField(String(localized: "500"), text: $draft.strengthText)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 90)
+            // Placeholder-first: at rest each row is a single quiet line.
+            // The unit appears the moment a number does — options exactly
+            // when they become relevant, never before. Everything optional:
+            // "the blue pill, one in the morning" is always enough to save.
+            HStack(spacing: 8) {
+                TextField(String(localized: "Strength (e.g. 500)"), text: $draft.strengthText)
+                    .keyboardType(.decimalPad)
+                if showsStrengthUnit {
                     Menu {
                         ForEach(StrengthUnit.allCases) { unit in
                             Button {
@@ -163,21 +171,23 @@ struct MedicationEditor: View {
                             .foregroundStyle(draft.strengthUnit == nil ? .tertiary : .secondary)
                     }
                     .accessibilityLabel(String(localized: "Strength unit"))
+                    .transition(.opacity)
                 }
             }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsStrengthUnit)
 
-            LabeledContent(String(localized: "Amount per dose")) {
-                HStack(spacing: 8) {
-                    TextField(String(localized: "1"), text: $draft.intakeText)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 90)
-                    // The unit is whispered, not asked: the form choice above
+            HStack(spacing: 8) {
+                TextField(String(localized: "Amount per dose (e.g. 1)"), text: $draft.intakeText)
+                    .keyboardType(.decimalPad)
+                if showsIntakeUnit {
+                    // The unit is whispered, not asked: the form choice
                     // already answered it.
                     Text(draft.intakeUnitLabel)
                         .foregroundStyle(.secondary)
+                        .transition(.opacity)
                 }
             }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsIntakeUnit)
 
             Button { route = .form } label: {
                 // Unchosen reads as an invitation, not an assumption. If the
