@@ -30,41 +30,16 @@ struct MedicationEditor: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // The fast path lives *outside* the form entirely: pinned
-                // above it, always visible, always reachable — scroll or
-                // keyboard can never hide it. For the people this app
-                // serves, pointing the camera at the bottle beats typing
-                // every time. (Ysr's mother, user testing in the wild.)
-                if LabelScannerSheet.isAvailable {
-                    Button { route = .scanner } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "camera.viewfinder")
-                                .font(.headline)
-                            Text(String(localized: "Scan Medication"))
-                                .font(.headline)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 56)
-                        .contentShape(.rect)
-                    }
-                    .prominentButton()
-                    .tint(Theme.accent)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .accessibilityHint(String(localized: "Opens the camera to read the bottle's label"))
-                }
+            Form {
+                detailsSection
+                scheduleSection
+                moreOptionsSection
 
-                Form {
-                    detailsSection
-                    scheduleSection
-                    moreOptionsSection
-
-                    if showsMoreOptions {
-                        notesSection
-                        supplySection
-                        remindersSection
-                        colorSection
-                    }
+                if showsMoreOptions {
+                    notesSection
+                    supplySection
+                    remindersSection
+                    colorSection
                 }
             }
             .navigationTitle(medication == nil
@@ -128,11 +103,21 @@ struct MedicationEditor: View {
 
     private var detailsSection: some View {
         Section {
-            // One rhythm for the whole card: every row is 52pt, so nothing
-            // shifts when the unit chips appear and the eye can rest.
+            // The fast path, first row, in the quiet glass she already
+            // called beautiful: full-width, camera glyph, nothing louder.
+            if LabelScannerSheet.isAvailable {
+                Button { route = .scanner } label: {
+                    Label(String(localized: "Scan Medication"), systemImage: "camera.viewfinder")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .contentShape(.rect)
+                }
+                .secondaryButton()
+                .accessibilityHint(String(localized: "Opens the camera to read the bottle's label"))
+            }
+
             TextField(String(localized: "Medication name"), text: $draft.name)
                 .textInputAutocapitalization(.words)
-                .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
 
             // Placeholder-first: at rest each row is a single quiet line.
             // The unit appears the moment a number does — options exactly
@@ -156,20 +141,19 @@ struct MedicationEditor: View {
                             }
                         }
                     } label: {
-                        // A capsule with a chevron — the way Apple marks an
-                        // inline choice (Reminders' priority, Health's unit
-                        // pickers). Bare text read as a label; a chip with a
-                        // chevron reads as "tap me". Unset, it wears the
-                        // accent: an invitation, not a placeholder.
-                        HStack(spacing: 4) {
+                        // A compact capsule with a chevron — the way Apple
+                        // marks an inline choice. Unset, it wears the accent:
+                        // an invitation, not a placeholder. Small enough that
+                        // its arrival never breaks the row's line.
+                        HStack(spacing: 3) {
                             Text(draft.strengthUnit?.displayName ?? String(localized: "unit"))
                             Image(systemName: "chevron.up.chevron.down")
                                 .font(.caption2.weight(.bold))
                         }
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(draft.strengthUnit == nil ? Theme.accent : .primary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 3)
                         .background(Color(.tertiarySystemFill), in: .capsule)
                     }
                     .menuIndicator(.hidden)
@@ -177,10 +161,6 @@ struct MedicationEditor: View {
                     .transition(.opacity)
                 }
             }
-            // The row reserves its full height whether or not the chip is
-            // showing — an appearing choice must never shift the line
-            // underneath it.
-            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsStrengthUnit)
 
             HStack(spacing: 8) {
@@ -194,7 +174,6 @@ struct MedicationEditor: View {
                         .transition(.opacity)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsIntakeUnit)
 
             Button { route = .form } label: {
