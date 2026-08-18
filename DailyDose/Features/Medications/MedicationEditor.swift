@@ -109,7 +109,7 @@ struct MedicationEditor: View {
                 Button { route = .scanner } label: {
                     Label(String(localized: "Scan Medication"), systemImage: "camera.viewfinder")
                         .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                         .contentShape(.rect)
                 }
                 .secondaryButton()
@@ -183,7 +183,7 @@ struct MedicationEditor: View {
                 // here, where the choice is made: pick a form, the glyph
                 // appears; change the colour below, the tile repaints.
                 HStack(spacing: 14) {
-                    MedicationTile(color: draft.color, form: draft.form, size: 34)
+                    MedicationTile(color: draft.color, form: draft.form, size: 30)
                     Text(String(localized: "Form"))
                         .foregroundStyle(.primary)
                     Spacer(minLength: 12)
@@ -194,7 +194,7 @@ struct MedicationEditor: View {
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.tertiary)
                 }
-                .frame(maxWidth: .infinity, minHeight: 52)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(.rect)
             }
             .buttonStyle(SoftPressButtonStyle())
@@ -346,7 +346,7 @@ struct MedicationEditor: View {
                         .foregroundStyle(.tertiary)
                         .rotationEffect(.degrees(showsMoreOptions ? 180 : 0))
                 }
-                .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(.rect)
             }
             .buttonStyle(SoftPressButtonStyle())
@@ -572,7 +572,7 @@ private struct FrequencyPicker: View {
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(.tertiary)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 56)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                         .contentShape(.rect)
                     }
                     .buttonStyle(SoftPressButtonStyle())
@@ -627,7 +627,7 @@ private struct FrequencyPicker: View {
                         .foregroundStyle(Theme.accent)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 56)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -665,7 +665,7 @@ private struct MoreSchedulesPicker: View {
                         .foregroundStyle(Theme.accent)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 56)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -706,7 +706,7 @@ private struct EditorSummaryRow: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 52)
+        .frame(maxWidth: .infinity, minHeight: 44)
         .contentShape(.rect)
     }
 
@@ -835,7 +835,7 @@ private struct FormPicker: View {
                         .foregroundStyle(Theme.accent)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 56)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(.rect)
         }
         .buttonStyle(SoftPressButtonStyle())
