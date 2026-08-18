@@ -102,26 +102,43 @@ struct MedicationEditor: View {
     }
 
     private var detailsSection: some View {
+        // Two sections from one property: the Group is transparent to the
+        // Form but lets the builder combine them.
+        Group {
+        // The scan button floats *above* the card: its own section with a
+        // clear background, so it reads as a hero action, not a form field.
         Section {
+            // The fast path, announced: a full-width glass-prominent
+            // capsule in the app's cyan — the boldest thing on the
+            // screen, in the same Liquid Glass language as the rest of
+            // the app. For the people this app serves, pointing the
+            // camera at the bottle beats typing every time. (Ysr's
+            // mother, user testing in the wild.)
             if LabelScannerSheet.isAvailable {
-                // The fast path, announced: a full-width filled button — the
-                // boldest thing on the screen, because for the people this
-                // app serves, pointing the camera at the bottle beats typing
-                // every time. (Ysr's mother, user testing in the wild.)
                 Button { route = .scanner } label: {
-                    Label(String(localized: "Scan Medication"), systemImage: "camera.viewfinder")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight: 56)
-                        .contentShape(.rect)
+                    HStack(spacing: 8) {
+                        Image(systemName: "camera.viewfinder")
+                            .font(.headline)
+                        Text(String(localized: "Scan Medication"))
+                            .font(.headline)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 56)
+                    .contentShape(.rect)
                 }
-                .buttonStyle(.borderedProminent)
+                .prominentButton()
                 .tint(Theme.accent)
-                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                 .accessibilityHint(String(localized: "Opens the camera to read the bottle's label"))
             }
+        }
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 2, trailing: 16))
 
+        Section {
+            // One rhythm for the whole card: every row is 52pt, so nothing
+            // shifts when the unit chips appear and the eye can rest.
             TextField(String(localized: "Medication name"), text: $draft.name)
                 .textInputAutocapitalization(.words)
+                .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
 
             // Placeholder-first: at rest each row is a single quiet line.
             // The unit appears the moment a number does — options exactly
@@ -221,6 +238,7 @@ struct MedicationEditor: View {
             } else {
                 Text(String(localized: "You can add notes, supply tracking and reminder preferences under More Options."))
             }
+        }
         }
     }
 
