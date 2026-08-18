@@ -104,29 +104,19 @@ struct MedicationEditor: View {
     private var detailsSection: some View {
         Section {
             if LabelScannerSheet.isAvailable {
+                // The fast path, announced: a full-width filled button — the
+                // boldest thing on the screen, because for the people this
+                // app serves, pointing the camera at the bottle beats typing
+                // every time. (Ysr's mother, user testing in the wild.)
                 Button { route = .scanner } label: {
-                    // The fast path, dressed like one: an accent tile with
-                    // the viewfinder glyph, a plain invitation, and the
-                    // chevron that says "this takes you somewhere". One row,
-                    // same rhythm as the Form row beneath it.
-                    HStack(spacing: 14) {
-                        Image(systemName: "camera.viewfinder")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(Theme.accent)
-                            .frame(width: 34, height: 34)
-                            .background(Theme.accent.opacity(0.14), in: .rect(cornerRadius: 9, style: .continuous))
-                            .accessibilityHidden(true)
-                        Text(String(localized: "Scan medication label"))
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .contentShape(.rect)
+                    Label(String(localized: "Scan Medication"), systemImage: "camera.viewfinder")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 56)
+                        .contentShape(.rect)
                 }
-                .buttonStyle(SoftPressButtonStyle())
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.accent)
+                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                 .accessibilityHint(String(localized: "Opens the camera to read the bottle's label"))
             }
 
