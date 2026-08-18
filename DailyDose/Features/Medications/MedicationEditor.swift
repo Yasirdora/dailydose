@@ -30,27 +30,28 @@ struct MedicationEditor: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // The fast path floats above every field, outside both
-                // cards: field-sized (44pt, like everything else), quiet
-                // tinted glass — visible on the dark page precisely because
-                // it carries the accent. Untinted glass over near-black is
-                // how it went invisible once; never again.
-                if LabelScannerSheet.isAvailable {
-                    Button { route = .scanner } label: {
-                        Label(String(localized: "Scan Medication"), systemImage: "camera.viewfinder")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .contentShape(.rect)
+            // No Form, no system rows, no derived separators: the sheet is
+            // hand-built cards in a ScrollView — the same fully-controlled
+            // approach that made the rest of the app stable. Every card
+            // shares one row height and one divider rhythm.
+            ScrollView {
+                VStack(spacing: 22) {
+                    // The fast path, first and outside every card: exactly
+                    // one row tall, like each field — quiet glass tinted
+                    // with the accent, because untinted glass over the
+                    // near-black page is how it once went invisible.
+                    if LabelScannerSheet.isAvailable {
+                        Button { route = .scanner } label: {
+                            Label(String(localized: "Scan Medication"), systemImage: "camera.viewfinder")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, minHeight: editorRowHeight)
+                                .contentShape(.rect)
+                        }
+                        .secondaryButton()
+                        .tint(Theme.accent)
+                        .accessibilityHint(String(localized: "Opens the camera to read the bottle's label"))
                     }
-                    .secondaryButton()
-                    .tint(Theme.accent)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .accessibilityHint(String(localized: "Opens the camera to read the bottle's label"))
-                }
 
-                Form {
                     detailsSection
                     scheduleSection
                     moreOptionsSection
@@ -62,7 +63,11 @@ struct MedicationEditor: View {
                         colorSection
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 32)
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(medication == nil
                              ? String(localized: "Add Medication")
                              : String(localized: "Edit Medication"))
@@ -133,7 +138,7 @@ struct MedicationEditor: View {
     private func editorRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         HStack(spacing: 8) { content() }
             .padding(.horizontal, 16)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: editorRowHeight, alignment: .leading)
     }
 
     /// A compact capsule with a chevron — the way Apple marks an inline
@@ -175,217 +180,185 @@ struct MedicationEditor: View {
     /// as stubs at the trailing edge. So this card opts out entirely — a
     /// single VStack with explicit hairlines, every row exactly 44pt, every
     /// divider exactly where a native one would sit.
+    /// One height for every interactive row in this sheet. Declared once,
+    /// applied everywhere — uniformity by construction, not approximation.
+    private var editorRowHeight: CGFloat { 48 }
+
     private var detailsSection: some View {
-        Section {
-            VStack(spacing: 0) {
-                editorRow {
-                    TextField(String(localized: "Medication name"), text: $draft.name)
-                        .textInputAutocapitalization(.words)
-                }
-                rowDivider
-
-                // Placeholder-first: at rest each row is a single quiet
-                // line. The unit appears the moment a number does — options
-                // exactly when they become relevant, never before.
-                editorRow {
-                    TextField(String(localized: "Strength (e.g. 500)"), text: $draft.strengthText)
-                        .keyboardType(.decimalPad)
-                    if showsStrengthUnit {
-                        strengthUnitMenu
-                            .transition(.opacity)
-                    }
-                }
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsStrengthUnit)
-                rowDivider
-
-                editorRow {
-                    TextField(String(localized: "Amount per dose (e.g. 1)"), text: $draft.intakeText)
-                        .keyboardType(.decimalPad)
-                    if showsIntakeUnit {
-                        // The unit is whispered, not asked: the form choice
-                        // already answered it.
-                        Text(draft.intakeUnitLabel)
-                            .foregroundStyle(.secondary)
-                            .transition(.opacity)
-                    }
-                }
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsIntakeUnit)
-                rowDivider
-
-                Button { route = .form } label: {
-                    // The preview card's one true magic — watching the tile
-                    // come alive — lives here, where the choice is made:
-                    // pick a form, the glyph appears; change the colour
-                    // below, the tile repaints.
-                    HStack(spacing: 12) {
-                        MedicationTile(color: draft.color, form: draft.form, size: 28)
-                        Text(String(localized: "Form"))
-                            .foregroundStyle(.primary)
-                        Spacer(minLength: 12)
-                        Text(draft.form?.displayName ?? String(localized: "Choose"))
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.trailing)
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(.horizontal, 16)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(SoftPressButtonStyle())
-                .accessibilityHint(String(localized: "Choose whether this is a pill, liquid, injection or another form"))
+        cardSection(String(localized: "Medication"), footer: medicationFooter) {
+            editorRow {
+                TextField(String(localized: "Medication name"), text: $draft.name)
+                    .textInputAutocapitalization(.words)
             }
-            .listRowInsets(EdgeInsets())
-            .listRowSeparator(.hidden)
-        } header: {
-            Text(String(localized: "Medication"))
-        } footer: {
-            if draft.trimmedName.isEmpty {
-                Text(String(localized: "Enter the medication name to continue."))
-                    .foregroundStyle(Theme.due)
-            } else if draft.hasInvalidDoseNumbers {
-                Text(String(localized: "Strength and amount should be numbers, like 500 or 0.5."))
-                    .foregroundStyle(Theme.due)
-            } else {
-                Text(String(localized: "You can add notes, supply tracking and reminder preferences under More Options."))
+            rowDivider
+
+            // Placeholder-first: at rest each row is a single quiet line.
+            // The unit appears the moment a number does — options exactly
+            // when they become relevant, never before.
+            editorRow {
+                TextField(String(localized: "Strength (e.g. 500)"), text: $draft.strengthText)
+                    .keyboardType(.decimalPad)
+                if showsStrengthUnit {
+                    strengthUnitMenu
+                        .transition(.opacity)
+                }
             }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsStrengthUnit)
+            rowDivider
+
+            editorRow {
+                TextField(String(localized: "Amount per dose (e.g. 1)"), text: $draft.intakeText)
+                    .keyboardType(.decimalPad)
+                if showsIntakeUnit {
+                    // The unit is whispered, not asked: the form choice
+                    // already answered it.
+                    Text(draft.intakeUnitLabel)
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
+                }
+            }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsIntakeUnit)
+            rowDivider
+
+            Button { route = .form } label: {
+                // The preview card's one true magic — watching the tile come
+                // alive — lives here, where the choice is made: pick a form,
+                // the glyph appears; change the colour below, it repaints.
+                HStack(spacing: 12) {
+                    MedicationTile(color: draft.color, form: draft.form, size: 28)
+                    Text(String(localized: "Form"))
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 12)
+                    Text(draft.form?.displayName ?? String(localized: "Choose"))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, minHeight: editorRowHeight)
+                .contentShape(.rect)
+            }
+            .buttonStyle(SoftPressButtonStyle())
+            .accessibilityHint(String(localized: "Choose whether this is a pill, liquid, injection or another form"))
         }
     }
 
-    /// Hand-built like the Medication card: one VStack, explicit dividers,
-    /// every row 44pt. Two cards, one set of metrics — uniformity by
-    /// construction, not by approximation.
+    /// Hand-built with the same rows and dividers as the Medication card.
+    /// Two cards, one set of metrics.
     private var scheduleSection: some View {
-        Section {
-            VStack(spacing: 0) {
-                Button { route = .frequency } label: {
-                    EditorSummaryRow(
-                        label: String(localized: "How often"),
-                        value: draft.frequencySummary
-                    )
-                }
-                .buttonStyle(SoftPressButtonStyle())
-                .accessibilityHint(String(localized: "Choose how often this medication is taken"))
+        cardSection(String(localized: "Schedule"), footer: scheduleFooter) {
+            Button { route = .frequency } label: {
+                EditorSummaryRow(
+                    label: String(localized: "How often"),
+                    value: draft.frequencySummary
+                )
+            }
+            .buttonStyle(SoftPressButtonStyle())
+            .accessibilityHint(String(localized: "Choose how often this medication is taken"))
 
-                if draft.kind == .everyXDays {
-                    rowDivider
-                    editorRow {
-                        Stepper(value: $draft.intervalDays, in: 1...90) {
-                            LabeledContent(String(localized: "Repeat every")) {
-                                Text(daysCopy(draft.intervalDays))
-                                    .foregroundStyle(.secondary)
-                            }
+            if draft.kind == .everyXDays {
+                rowDivider
+                editorRow {
+                    Stepper(value: $draft.intervalDays, in: 1...90) {
+                        LabeledContent(String(localized: "Repeat every")) {
+                            Text(daysCopy(draft.intervalDays))
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
+            }
 
-                if draft.kind == .everyXHours {
-                    rowDivider
-                    editorRow {
-                        Stepper(value: $draft.intervalHours, in: 1...24) {
-                            LabeledContent(String(localized: "Repeat every")) {
-                                Text(hoursCopy(draft.intervalHours))
-                                    .foregroundStyle(.secondary)
-                            }
+            if draft.kind == .everyXHours {
+                rowDivider
+                editorRow {
+                    Stepper(value: $draft.intervalHours, in: 1...24) {
+                        LabeledContent(String(localized: "Repeat every")) {
+                            Text(hoursCopy(draft.intervalHours))
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
+            }
 
-                if draft.kind == .cycle {
-                    rowDivider
-                    editorRow {
-                        Stepper(value: $draft.cycleOnDays, in: 1...90) {
-                            LabeledContent(String(localized: "Take for")) {
-                                Text(daysCopy(draft.cycleOnDays))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    rowDivider
-                    editorRow {
-                        Stepper(value: $draft.cycleOffDays, in: 1...30) {
-                            LabeledContent(String(localized: "Then pause for")) {
-                                Text(daysCopy(draft.cycleOffDays))
-                                    .foregroundStyle(.secondary)
-                            }
+            if draft.kind == .cycle {
+                rowDivider
+                editorRow {
+                    Stepper(value: $draft.cycleOnDays, in: 1...90) {
+                        LabeledContent(String(localized: "Take for")) {
+                            Text(daysCopy(draft.cycleOnDays))
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
-
-                if draft.kind == .weekdays {
-                    rowDivider
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(String(localized: "Which days?"))
-                            .font(.subheadline.weight(.medium))
-                        WeekdayPicker(selection: $draft.weekdays)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if draft.kind == .monthly {
-                    rowDivider
-                    editorRow {
-                        Picker(String(localized: "Day of month"), selection: $draft.dayOfMonth) {
-                            ForEach(1...31, id: \.self) { day in
-                                Text(day.ordinalString()).tag(day)
-                            }
+                rowDivider
+                editorRow {
+                    Stepper(value: $draft.cycleOffDays, in: 1...30) {
+                        LabeledContent(String(localized: "Then pause for")) {
+                            Text(daysCopy(draft.cycleOffDays))
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
+            }
 
-                ForEach(Array(draft.times.sorted().enumerated()), id: \.element) { index, time in
-                    rowDivider
-                    editorRow {
-                        DatePicker(
-                            draft.kind == .everyXHours
-                                ? String(localized: "Starting at")
-                                : draft.times.count == 1
-                                    ? String(localized: "Time")
-                                    : String(localized: "Time \(index + 1)"),
-                            selection: binding(for: time),
-                            displayedComponents: .hourAndMinute
-                        )
+            if draft.kind == .weekdays {
+                rowDivider
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(String(localized: "Which days?"))
+                        .font(.subheadline.weight(.medium))
+                    WeekdayPicker(selection: $draft.weekdays)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if draft.kind == .monthly {
+                rowDivider
+                editorRow {
+                    Picker(String(localized: "Day of month"), selection: $draft.dayOfMonth) {
+                        ForEach(1...31, id: \.self) { day in
+                            Text(day.ordinalString()).tag(day)
+                        }
                     }
                 }
+            }
 
+            ForEach(Array(draft.times.sorted().enumerated()), id: \.element) { index, time in
                 rowDivider
                 editorRow {
                     DatePicker(
-                        String(localized: "Starts"),
-                        selection: $draft.startDate,
-                        displayedComponents: .date
+                        draft.kind == .everyXHours
+                            ? String(localized: "Starting at")
+                            : draft.times.count == 1
+                                ? String(localized: "Time")
+                                : String(localized: "Time \(index + 1)"),
+                        selection: binding(for: time),
+                        displayedComponents: .hourAndMinute
                     )
                 }
+            }
 
-                rowDivider
-                Button { route = .duration } label: {
-                    EditorSummaryRow(
-                        label: String(localized: "Ends"),
-                        value: draft.durationSummary
-                    )
-                }
-                .buttonStyle(SoftPressButtonStyle())
-                .accessibilityHint(String(localized: "Choose whether this medication has an end date"))
+            rowDivider
+            editorRow {
+                DatePicker(
+                    String(localized: "Starts"),
+                    selection: $draft.startDate,
+                    displayedComponents: .date
+                )
             }
-            .listRowInsets(EdgeInsets())
-            .listRowSeparator(.hidden)
-        } header: {
-            Text(String(localized: "Schedule"))
-        } footer: {
-            // Duplicate times are impossible to store, so tell the user why the
-            // picker snapped rather than letting it look broken.
-            if draft.hasCollidingTimes {
-                Text(String(localized: "Two doses can't share the same time — adjust one by a minute."))
-                    .foregroundStyle(Theme.due)
-            } else if draft.times.isEmpty {
-                Text(String(localized: "Add at least one time so reminders can be scheduled."))
-                    .foregroundStyle(Theme.due)
-            } else if draft.kind == .daily, draft.times.count > 1 {
-                Text(String(localized: "Review the suggested times and change them to match your medication instructions."))
+
+            rowDivider
+            Button { route = .duration } label: {
+                EditorSummaryRow(
+                    label: String(localized: "Ends"),
+                    value: draft.durationSummary
+                )
             }
+            .buttonStyle(SoftPressButtonStyle())
+            .accessibilityHint(String(localized: "Choose whether this medication has an end date"))
         }
     }
 
@@ -393,7 +366,7 @@ struct MedicationEditor: View {
     /// personalisation remains easy to find without competing with the first
     /// successful setup.
     private var moreOptionsSection: some View {
-        Section {
+        VStack(spacing: 0) {
             Button {
                 if reduceMotion {
                     showsMoreOptions.toggle()
@@ -420,7 +393,8 @@ struct MedicationEditor: View {
                         .foregroundStyle(.tertiary)
                         .rotationEffect(.degrees(showsMoreOptions ? 180 : 0))
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, minHeight: editorRowHeight)
                 .contentShape(.rect)
             }
             .buttonStyle(SoftPressButtonStyle())
@@ -430,39 +404,41 @@ struct MedicationEditor: View {
                     : String(localized: "Shows notes, supply tracking, reminder preferences and colour")
             )
         }
+        .cardStyle()
     }
 
     private var notesSection: some View {
-        Section(String(localized: "Details")) {
-            TextField(String(localized: "Notes (e.g. take with food)"), text: $draft.notes)
+        cardSection(String(localized: "Details")) {
+            editorRow {
+                TextField(String(localized: "Notes (e.g. take with food)"), text: $draft.notes)
+            }
         }
     }
 
     private var supplySection: some View {
-        Section {
-            Toggle(String(localized: "Track supply"), isOn: $draft.tracksSupply.animation(.smooth(duration: 0.25)))
+        cardSection(String(localized: "Supply & refill"), footer: supplyFooter) {
+            editorRow {
+                Toggle(String(localized: "Track supply"), isOn: $draft.tracksSupply.animation(.smooth(duration: 0.25)))
+            }
             if draft.tracksSupply {
-                LabeledContent(String(localized: "Doses on hand")) {
+                rowDivider
+                editorRow {
+                    Text(String(localized: "Doses on hand"))
+                    Spacer()
                     TextField("0", value: $draft.pillsRemaining, format: .number)
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 80)
                 }
-                LabeledContent(String(localized: "Warn me at")) {
+                rowDivider
+                editorRow {
+                    Text(String(localized: "Warn me at"))
+                    Spacer()
                     TextField("0", value: $draft.refillThreshold, format: .number)
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 80)
                 }
-            }
-        } header: {
-            Text(String(localized: "Supply & refill"))
-        } footer: {
-            // Numeric fields are typed now, so "thirty" can't silently disable
-            // supply tracking the way free-text `Int(_:)` parsing did.
-            if draft.tracksSupply, draft.refillThresholdExceedsSupply {
-                Text(String(localized: "The warning level is higher than what you have — you'll be alerted right away."))
-                    .foregroundStyle(Theme.due)
-            } else {
-                Text(String(localized: "Optional. Daily Dose counts down as you log doses and warns you before you run out."))
             }
         }
     }
@@ -473,17 +449,18 @@ struct MedicationEditor: View {
     /// vitamin and a heart medication genuinely are not the same event, and
     /// delivering them identically is what teaches people to swipe both away.
     private var remindersSection: some View {
-        Section {
+        cardSection(
+            String(localized: "Reminders"),
+            footer: Text(draft.importance.explanation).foregroundStyle(.secondary)
+        ) {
             MedicationImportancePicker(importance: $draft.importance)
-        } header: {
-            Text(String(localized: "Reminders"))
-        } footer: {
-            Text(draft.importance.explanation)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
         }
     }
 
     private var colorSection: some View {
-        Section(String(localized: "Color")) {
+        cardSection(String(localized: "Color")) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 6), spacing: 14) {
                 ForEach(MedicationColor.allCases) { swatch in
                     Button {
@@ -508,8 +485,70 @@ struct MedicationEditor: View {
                     .accessibilityAddTraits(draft.color == swatch ? [.isButton, .isSelected] : .isButton)
                 }
             }
-            .padding(.vertical, 6)
+            .padding(16)
         }
+    }
+
+    // MARK: - Card plumbing
+
+    /// A titled card with hand-drawn rows — the sheet's only layout system.
+    private func cardSection<Rows: View>(
+        _ title: String,
+        footer: Text? = nil,
+        @ViewBuilder rows: () -> Rows
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 8)
+            VStack(spacing: 0, content: rows)
+                .cardStyle()
+            if let footer {
+                footer
+                    .font(.footnote)
+                    .padding(.horizontal, 8)
+            }
+        }
+    }
+
+    private var medicationFooter: Text {
+        if draft.trimmedName.isEmpty {
+            return Text(String(localized: "Enter the medication name to continue."))
+                .foregroundStyle(Theme.due)
+        } else if draft.hasInvalidDoseNumbers {
+            return Text(String(localized: "Strength and amount should be numbers, like 500 or 0.5."))
+                .foregroundStyle(Theme.due)
+        }
+        return Text(String(localized: "You can add notes, supply tracking and reminder preferences under More Options."))
+            .foregroundStyle(.secondary)
+    }
+
+    private var scheduleFooter: Text? {
+        // Duplicate times are impossible to store, so tell the user why the
+        // picker snapped rather than letting it look broken.
+        if draft.hasCollidingTimes {
+            return Text(String(localized: "Two doses can't share the same time — adjust one by a minute."))
+                .foregroundStyle(Theme.due)
+        } else if draft.times.isEmpty {
+            return Text(String(localized: "Add at least one time so reminders can be scheduled."))
+                .foregroundStyle(Theme.due)
+        } else if draft.kind == .daily, draft.times.count > 1 {
+            return Text(String(localized: "Review the suggested times and change them to match your medication instructions."))
+                .foregroundStyle(.secondary)
+        }
+        return nil
+    }
+
+    private var supplyFooter: Text {
+        // Numeric fields are typed now, so "thirty" can't silently disable
+        // supply tracking the way free-text `Int(_:)` parsing did.
+        if draft.tracksSupply, draft.refillThresholdExceedsSupply {
+            return Text(String(localized: "The warning level is higher than what you have — you'll be alerted right away."))
+                .foregroundStyle(Theme.due)
+        }
+        return Text(String(localized: "Optional. Daily Dose counts down as you log doses and warns you before you run out."))
+            .foregroundStyle(.secondary)
     }
 
     private func daysCopy(_ count: Int) -> String {
@@ -781,7 +820,8 @@ private struct EditorSummaryRow: View {
             }
         }
         .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: 44)
+        // 48 — the sheet's single row height, shared with every other row.
+        .frame(maxWidth: .infinity, minHeight: 48)
         .contentShape(.rect)
     }
 
