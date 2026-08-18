@@ -455,9 +455,41 @@ struct MedicationEditor: View {
             String(localized: "Reminders"),
             footer: Text(draft.importance.explanation).foregroundStyle(.secondary)
         ) {
-            MedicationImportancePicker(importance: $draft.importance)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+            // A system Picker only spreads full-width inside a Form row;
+            // loose in a card it collapsed to its own content. So the row
+            // is built like every other: label left, choice chip right.
+            editorRow {
+                Label(String(localized: "Reminders"), systemImage: "bell.badge")
+                    .foregroundStyle(.primary)
+                Spacer()
+                Menu {
+                    ForEach(MedicationImportance.allCases) { level in
+                        Button {
+                            draft.importance = level
+                            Haptics.select()
+                        } label: {
+                            if draft.importance == level {
+                                Label(level.title, systemImage: "checkmark")
+                            } else {
+                                Label(level.title, systemImage: level.systemImage)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(draft.importance.title)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2.weight(.bold))
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
+                    .background(Color(.tertiarySystemFill), in: .capsule)
+                }
+                .menuIndicator(.hidden)
+                .accessibilityLabel(String(localized: "Reminder strength"))
+            }
         }
     }
 
