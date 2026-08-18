@@ -687,7 +687,7 @@ private struct FrequencyPicker: View {
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(.tertiary)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .frame(maxWidth: .infinity, minHeight: 34)
                         .contentShape(.rect)
                     }
                     .buttonStyle(SoftPressButtonStyle())
@@ -742,7 +742,7 @@ private struct FrequencyPicker: View {
                         .foregroundStyle(Theme.accent)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 52)
+            .frame(maxWidth: .infinity, minHeight: 34)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -780,7 +780,7 @@ private struct MoreSchedulesPicker: View {
                         .foregroundStyle(Theme.accent)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 52)
+            .frame(maxWidth: .infinity, minHeight: 34)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -931,6 +931,9 @@ private struct FormPicker: View {
         .presentationDetents([.medium, .large])
     }
 
+    /// Picker rows live inside a List, which adds its own ~22pt of vertical
+    /// padding. 34pt of content + 22pt of system air lands at 56 — the
+    /// sheet's one rhythm, shared with the hand-built cards.
     private func row(_ form: MedicationForm) -> some View {
         Button {
             selection = form
@@ -952,7 +955,7 @@ private struct FormPicker: View {
                         .foregroundStyle(Theme.accent)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 52)
+            .frame(maxWidth: .infinity, minHeight: 34)
             .contentShape(.rect)
         }
         .buttonStyle(SoftPressButtonStyle())
