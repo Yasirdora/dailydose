@@ -14,7 +14,9 @@ import SwiftData
 /// `BackupServiceTests.testExportImportRoundTrip`.
 enum BackupService {
 
-    static let currentVersion = 3
+    /// v4 adds structured strength (amount, unit, per-dose intake). Older
+    /// builds refuse a v4 archive rather than silently dropping the numbers.
+    static let currentVersion = 4
     static let fileExtension = "dailydose"
 
     // MARK: - Wire format
@@ -34,8 +36,13 @@ enum BackupService {
         var notes: String
         var colorName: String
         /// Physical form raw value. Optional so archives written before V5
-        /// still decode; nil resolves to the default form.
+        /// still decode; nil means unspecified.
         var formRaw: String? = nil
+        /// Structured strength, format v4. Optional so older archives still
+        /// decode; nil simply means the entry predates the structure.
+        var strengthAmount: Double? = nil
+        var strengthUnitRaw: String? = nil
+        var intakeAmount: Double? = nil
         var isActive: Bool
         var createdAt: Date
 
@@ -86,6 +93,9 @@ enum BackupService {
                     notes: medication.notes,
                     colorName: medication.colorName,
                     formRaw: medication.formRaw,
+                    strengthAmount: medication.strengthAmount,
+                    strengthUnitRaw: medication.strengthUnitRaw,
+                    intakeAmount: medication.intakeAmount,
                     isActive: medication.isActive,
                     createdAt: medication.createdAt,
                     scheduleKind: schedule.kind.rawValue,
@@ -188,6 +198,9 @@ enum BackupService {
                 existing.notes = record.notes
                 existing.colorName = record.colorName
                 if let formRaw = record.formRaw { existing.formRaw = formRaw }
+                if let amount = record.strengthAmount { existing.strengthAmount = amount }
+                if let unitRaw = record.strengthUnitRaw { existing.strengthUnitRaw = unitRaw }
+                if let intake = record.intakeAmount { existing.intakeAmount = intake }
                 existing.isActive = record.isActive
                 existing.schedule = schedule
                 existing.pillsRemaining = record.pillsRemaining
@@ -204,6 +217,9 @@ enum BackupService {
                     pillsRemaining: record.pillsRemaining,
                     refillThreshold: record.refillThreshold,
                     form: record.formRaw.flatMap { MedicationForm(rawValue: $0) },
+                    strengthAmount: record.strengthAmount,
+                    strengthUnit: record.strengthUnitRaw.flatMap { StrengthUnit.named($0) },
+                    intakeAmount: record.intakeAmount,
                     isActive: record.isActive,
                     createdAt: record.createdAt
                 )

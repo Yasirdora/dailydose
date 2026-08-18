@@ -299,14 +299,88 @@ enum DailyDoseSchemaV4: VersionedSchema {
     }
 }
 
-/// The current schema. This is what the app boots with.
-///
-/// V5 adds one defaulted column to `Medication` — `formRaw`, the physical
-/// form (pill, inhaler, injection…), which drives the tile glyph and the
-/// supply unit language. Defaulted to "" (resolves to `.pill`), so the
-/// V4→V5 stage is lightweight and no row is read or rewritten.
+/// The schema as shipped before structured *strength* existed, kept frozen
+/// forever. V6 adds `strengthAmount`, `strengthUnitRaw` and `intakeAmount`
+/// to `Medication`; V5 therefore keeps its own copies under the original
+/// entity names.
 enum DailyDoseSchemaV5: VersionedSchema {
     static let versionIdentifier = Schema.Version(5, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [Medication.self, DoseEvent.self]
+    }
+
+    @Model
+    final class Medication {
+        @Attribute(.unique) var id: String = ""
+        var name: String
+        var doseDetail: String
+        var notes: String
+        var colorName: String
+        var formRaw: String = ""
+        var isActive: Bool
+        var createdAt: Date
+        var timesRaw: [String] = []
+        var scheduleKindRaw: String = "daily"
+        var weekdaysRaw: [Int] = [1, 2, 3, 4, 5, 6, 7]
+        var intervalDays: Int = 1
+        var dayOfMonth: Int?
+        var intervalHours: Int = 8
+        var cycleOnDays: Int = 21
+        var cycleOffDays: Int = 7
+        var startDate: Date = Date.distantPast
+        var endDate: Date?
+        var pillsRemaining: Int?
+        var refillThreshold: Int?
+        var importanceRaw: String = "standard"
+
+        @Relationship(deleteRule: .nullify, inverse: \DoseEvent.medication)
+        var events: [DoseEvent] = []
+
+        init(name: String) {
+            self.name = name
+            self.doseDetail = ""
+            self.notes = ""
+            self.colorName = "teal"
+            self.isActive = true
+            self.createdAt = .now
+        }
+    }
+
+    @Model
+    final class DoseEvent {
+        var medicationID: String = ""
+        var medicationName: String = ""
+        var medicationColorName: String = ""
+        var scheduledAt: Date
+        var scheduledWallKey: String = ""
+        var loggedAt: Date
+        var statusRaw: String
+
+        @Relationship var medication: Medication?
+
+        init(medication: Medication?, scheduledAt: Date, statusRaw: String, loggedAt: Date) {
+            self.medication = medication
+            self.medicationID = medication?.id ?? ""
+            self.medicationName = medication?.name.singleLine ?? ""
+            self.medicationColorName = medication?.colorName ?? ""
+            self.scheduledAt = scheduledAt
+            self.statusRaw = statusRaw
+            self.loggedAt = loggedAt
+        }
+    }
+}
+
+/// The current schema. This is what the app boots with.
+///
+/// V6 adds three optional/defaulted columns to `Medication` —
+/// `strengthAmount`, `strengthUnitRaw`, `intakeAmount`: strength and
+/// per-dose amount as structure rather than free text. All defaulted or
+/// optional, so the V5→V6 stage is lightweight and no row is read or
+/// rewritten. `doseDetail` stays: it is the composed display line every
+/// surface already renders.
+enum DailyDoseSchemaV6: VersionedSchema {
+    static let versionIdentifier = Schema.Version(6, 0, 0)
 
     static var models: [any PersistentModel.Type] {
         [Medication.self, DoseEvent.self]
@@ -341,11 +415,11 @@ enum DailyDoseSchemaV5: VersionedSchema {
 enum DailyDoseMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [DailyDoseSchemaV1.self, DailyDoseSchemaV2.self, DailyDoseSchemaV3.self,
-         DailyDoseSchemaV4.self, DailyDoseSchemaV5.self]
+         DailyDoseSchemaV4.self, DailyDoseSchemaV5.self, DailyDoseSchemaV6.self]
     }
 
     static var stages: [MigrationStage] {
-        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5]
+        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5, migrateV5toV6]
     }
 
     /// V2 → V3 only adds defaulted columns (`intervalHours`, `cycleOnDays`,
@@ -366,6 +440,13 @@ enum DailyDoseMigrationPlan: SchemaMigrationPlan {
     static let migrateV4toV5 = MigrationStage.lightweight(
         fromVersion: DailyDoseSchemaV4.self,
         toVersion: DailyDoseSchemaV5.self
+    )
+
+    /// V5 → V6 only adds optional/defaulted columns (`strengthAmount`,
+    /// `strengthUnitRaw`, `intakeAmount` on Medication).
+    static let migrateV5toV6 = MigrationStage.lightweight(
+        fromVersion: DailyDoseSchemaV5.self,
+        toVersion: DailyDoseSchemaV6.self
     )
 
     /// Everything a V1 row knew, as a Sendable value. The handoff between the

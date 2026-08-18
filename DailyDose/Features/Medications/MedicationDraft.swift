@@ -15,6 +15,17 @@ struct MedicationDraft: Equatable {
     /// silent pill default, because a wrong icon is worse than a neutral one.
     var form: MedicationForm?
 
+    // MARK: Structured strength
+
+    /// Strength as the user types it — "500" — kept as text so the field
+    /// never fights the keyboard. Parsed (comma-tolerant) at save.
+    var strengthText = ""
+    var strengthUnit: StrengthUnit?
+    /// How much is taken per dose, as typed — "2". The unit is not asked:
+    /// it comes from the form (inhaler → puffs), so one choice answers both
+    /// questions and they can never disagree.
+    var intakeText = ""
+
     var kind: ScheduleKind = .daily
     /// A `Set`, so two doses can never occupy the same minute — the condition
     /// that used to render duplicate cards where logging one logged both.
@@ -53,6 +64,12 @@ struct MedicationDraft: Equatable {
                 // A label that says "tablets" may pre-select the form; the
                 // user still sees it in the picker and can overrule it.
                 form = prefill.detectedForm
+                // And "500 MG" pre-fills the strength row — amount and unit —
+                // so a scan means confirming, not retyping.
+                if let amount = prefill.strengthAmount {
+                    strengthText = Self.format(amount)
+                    strengthUnit = prefill.strengthUnit
+                }
             }
             return
         }
@@ -62,6 +79,23 @@ struct MedicationDraft: Equatable {
         notes = medication.notes
         color = MedicationColor.named(medication.colorName)
         form = medication.form
+        if let amount = medication.strengthAmount {
+            strengthText = Self.format(amount)
+            strengthUnit = medication.strengthUnit
+        }
+        if let intake = medication.intakeAmount {
+            intakeText = Self.format(intake)
+        }
+        // Legacy free text: offer it to the parser, so "500 mg" typed before
+        // structured strength existed becomes amount + unit the next time
+        // the editor opens — upgraded, never discarded.
+        if strengthText.isEmpty && !medication.doseDetail.isEmpty {
+            let parsed = LabelScanParser.parse(medication.doseDetail)
+            if let amount = parsed.strengthAmount {
+                strengthText = Self.format(amount)
+                strengthUnit = parsed.strengthUnit
+            }
+        }
         kind = schedule.kind
         times = schedule.times.isEmpty ? [.morning] : schedule.times
         weekdays = schedule.weekdays.isEmpty ? Set(1...7) : schedule.weekdays
@@ -85,6 +119,7 @@ struct MedicationDraft: Equatable {
     var isValid: Bool {
         !trimmedName.isEmpty
             && !times.isEmpty
+            && !hasInvalidDoseNumbers
             && (kind != .weekdays || !weekdays.isEmpty)
             && (endDate.map { $0 >= Calendar.current.startOfDay(for: startDate) } ?? true)
     }
@@ -155,6 +190,10 @@ struct MedicationDraft: Equatable {
     mutating func apply(_ result: LabelScanParser.Result) {
         if !result.name.isEmpty { name = result.name }
         if !result.strength.isEmpty { doseDetail = result.strength }
+        if let amount = result.strengthAmount {
+            strengthText = Self.format(amount)
+            strengthUnit = result.strengthUnit
+        }
         // A scan never overrules a form the user already chose.
         if form == nil, let detected = result.detectedForm { form = detected }
     }
@@ -170,6 +209,63 @@ struct MedicationDraft: Equatable {
     /// detection from the entry's own words, else unspecified — never an
     /// assumed pill.
     var resolvedForm: MedicationForm? { form ?? detectedForm }
+
+    // MARK: - Strength
+
+    /// Numbers as people write them: "500" and "0,5" both parse.
+    static func parseAmount(_ text: String) -> Double? {
+        let cleaned = text.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: ",", with: ".")
+        guard !cleaned.isEmpty, let value = Double(cleaned), value > 0 else { return nil }
+        return value
+    }
+
+    /// 500 → "500", 0.5 → "0.5" — no trailing ".0" noise.
+    static func format(_ value: Double) -> String {
+        value.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(value)) : String(value)
+    }
+
+    var parsedStrength: Double? { Self.parseAmount(strengthText) }
+    var parsedIntake: Double? { Self.parseAmount(intakeText) }
+
+    /// Non-empty text that doesn't parse is a typo, and a silently dropped
+    /// number is worse than an honest complaint — so it blocks the save
+    /// with a footer explaining what the field expects.
+    var hasInvalidDoseNumbers: Bool {
+        (!strengthText.trimmingCharacters(in: .whitespaces).isEmpty && parsedStrength == nil)
+            || (!intakeText.trimmingCharacters(in: .whitespaces).isEmpty && parsedIntake == nil)
+    }
+
+    /// The unit the per-dose amount counts in — derived from the form,
+    /// neutral when the form is unspecified.
+    var intakeUnitLabel: String {
+        MedicationForm.supplyUnit(form: resolvedForm, count: parsedIntake == 1 ? 1 : 2)
+    }
+
+    /// The display line every surface renders: "500 mg · 2 puffs", built
+    /// from structure so it is consistent everywhere. A strength with no
+    /// unit still shows ("500"); a unit with no amount is dropped — the
+    /// number is the fact, the unit only qualifies it.
+    var composedDoseDetail: String {
+        var parts: [String] = []
+        if let strength = parsedStrength {
+            var s = Self.format(strength)
+            if let unit = strengthUnit { s += " \(unit.displayName)" }
+            parts.append(s)
+        }
+        if let intake = parsedIntake {
+            parts.append("\(Self.format(intake)) \(MedicationForm.supplyUnit(form: resolvedForm, count: intake == 1 ? 1 : 2))")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// What gets persisted as the display line: the composed structure when
+    /// anything structured exists, else whatever free text was already there
+    /// — legacy entries keep their words until the user replaces them.
+    var resolvedDoseDetail: String {
+        let composed = composedDoseDetail
+        return composed.isEmpty ? doseDetail : composed
+    }
 
     // MARK: - Output
 

@@ -44,7 +44,7 @@ struct MigrationTests {
         // The plan chains V1→V2 (custom), V2→V3 and V3→V4 (both lightweight);
         // the app boots with the latest schema, so that is what the store is
         // opened with here.
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV5.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV6.self)
         let container = try ModelContainer(
             for: currentSchema,
             migrationPlan: DailyDoseMigrationPlan.self,
@@ -123,7 +123,7 @@ struct MigrationTests {
         try v2Context.save()
 
         // --- Reopen through the migration plan, as the updated app does. ---
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV5.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV6.self)
         let container = try ModelContainer(
             for: currentSchema,
             migrationPlan: DailyDoseMigrationPlan.self,
@@ -180,7 +180,7 @@ struct MigrationTests {
         ))
         try v2Context.save()
 
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV5.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV6.self)
         for pass in 1...2 {
             let container = try ModelContainer(
                 for: currentSchema,
@@ -220,7 +220,7 @@ struct MigrationTests {
         ))
         try v3Context.save()
 
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV5.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV6.self)
         let container = try ModelContainer(
             for: currentSchema,
             migrationPlan: DailyDoseMigrationPlan.self,
@@ -263,7 +263,7 @@ struct MigrationTests {
         ))
         try v4Context.save()
 
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV5.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV6.self)
         let container = try ModelContainer(
             for: currentSchema,
             migrationPlan: DailyDoseMigrationPlan.self,
@@ -281,6 +281,59 @@ struct MigrationTests {
         // tile — or an assumed pill.
         #expect(migrated.formRaw == "")
         #expect(migrated.form == nil)
+
+        #expect(events.count == 1)
+        #expect(events.first?.medicationName == "Metformin")
+        #expect(events.first?.scheduledAt == scheduled)
+    }
+
+    /// The shape on every phone running the previous build, opened by the new
+    /// one: the structured-strength columns arrive empty and everything else
+    /// is untouched.
+    @Test("A V5 store lightweight-migrates to V6")
+    func v5StoreMigrates() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("migration-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("DailyDose.store")
+
+        let v5Schema = Schema(versionedSchema: DailyDoseSchemaV5.self)
+        let v5Container = try ModelContainer(
+            for: v5Schema,
+            configurations: [ModelConfiguration(schema: v5Schema, url: url)]
+        )
+        let v5Context = ModelContext(v5Container)
+        let medication = DailyDoseSchemaV5.Medication(name: "Metformin")
+        medication.id = "v5-id-1"
+        medication.doseDetail = "500 mg"
+        medication.formRaw = "pill"
+        let scheduled = Fixture.date(2026, 8, 10, 8)
+        v5Context.insert(medication)
+        v5Context.insert(DailyDoseSchemaV5.DoseEvent(
+            medication: medication, scheduledAt: scheduled, statusRaw: "taken", loggedAt: scheduled
+        ))
+        try v5Context.save()
+
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV6.self)
+        let container = try ModelContainer(
+            for: currentSchema,
+            migrationPlan: DailyDoseMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: currentSchema, url: url)]
+        )
+        let context = ModelContext(container)
+        let medications = try context.fetch(FetchDescriptor<Medication>())
+        let events = try context.fetch(FetchDescriptor<DoseEvent>())
+
+        #expect(medications.count == 1)
+        let migrated = try #require(medications.first)
+        #expect(migrated.id == "v5-id-1")
+        #expect(migrated.doseDetail == "500 mg")
+        #expect(migrated.form == .pill)
+        // Pre-structure rows arrive unspecified — no invented numbers.
+        #expect(migrated.strengthAmount == nil)
+        #expect(migrated.strengthUnit == nil)
+        #expect(migrated.intakeAmount == nil)
 
         #expect(events.count == 1)
         #expect(events.first?.medicationName == "Metformin")

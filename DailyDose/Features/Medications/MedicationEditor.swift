@@ -100,7 +100,7 @@ struct MedicationEditor: View {
                     Text(draft.name.isEmpty ? String(localized: "New medication") : draft.name)
                         .font(.headline)
                         .foregroundStyle(draft.name.isEmpty ? .secondary : .primary)
-                    Text(draft.doseDetail.isEmpty ? String(localized: "Dose") : draft.doseDetail)
+                    Text(draft.resolvedDoseDetail.isEmpty ? String(localized: "Dose") : draft.resolvedDoseDetail)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Text(draft.frequencySummary)
@@ -134,7 +134,50 @@ struct MedicationEditor: View {
 
             TextField(String(localized: "Medication name"), text: $draft.name)
                 .textInputAutocapitalization(.words)
-            TextField(String(localized: "Strength or dose (e.g. 500 mg, 1 tablet)"), text: $draft.doseDetail)
+
+            // Strength and per-dose amount, as structure: a number, a unit
+            // from a list of six, and an intake whose unit the form already
+            // answered. Everything optional — "the blue pill, one in the
+            // morning" is always enough to save.
+            LabeledContent(String(localized: "Strength")) {
+                HStack(spacing: 8) {
+                    TextField(String(localized: "500"), text: $draft.strengthText)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 90)
+                    Menu {
+                        ForEach(StrengthUnit.allCases) { unit in
+                            Button {
+                                draft.strengthUnit = unit
+                                Haptics.select()
+                            } label: {
+                                if draft.strengthUnit == unit {
+                                    Label(unit.displayName, systemImage: "checkmark")
+                                } else {
+                                    Text(unit.displayName)
+                                }
+                            }
+                        }
+                    } label: {
+                        Text(draft.strengthUnit?.displayName ?? String(localized: "unit"))
+                            .foregroundStyle(draft.strengthUnit == nil ? .tertiary : .secondary)
+                    }
+                    .accessibilityLabel(String(localized: "Strength unit"))
+                }
+            }
+
+            LabeledContent(String(localized: "Amount per dose")) {
+                HStack(spacing: 8) {
+                    TextField(String(localized: "1"), text: $draft.intakeText)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 90)
+                    // The unit is whispered, not asked: the form choice above
+                    // already answered it.
+                    Text(draft.intakeUnitLabel)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             Button { route = .form } label: {
                 // Unchosen reads as an invitation, not an assumption. If the
@@ -152,6 +195,9 @@ struct MedicationEditor: View {
         } footer: {
             if draft.trimmedName.isEmpty {
                 Text(String(localized: "Enter the medication name to continue."))
+                    .foregroundStyle(Theme.due)
+            } else if draft.hasInvalidDoseNumbers {
+                Text(String(localized: "Strength and amount should be numbers, like 500 or 0.5."))
                     .foregroundStyle(Theme.due)
             } else {
                 Text(String(localized: "You can add notes, supply tracking and reminder preferences under More Options."))
@@ -416,17 +462,23 @@ struct MedicationEditor: View {
         if let medication {
             store.update(
                 medication,
-                name: draft.name, doseDetail: draft.doseDetail, notes: draft.notes,
+                name: draft.name, doseDetail: draft.resolvedDoseDetail, notes: draft.notes,
                 colorName: draft.color.rawValue, schedule: schedule,
                 pillsRemaining: draft.resolvedPills, refillThreshold: draft.resolvedThreshold,
-                importance: draft.importance, form: form
+                importance: draft.importance, form: form,
+                strengthAmount: draft.parsedStrength,
+                strengthUnit: draft.parsedStrength != nil ? draft.strengthUnit : nil,
+                intakeAmount: draft.parsedIntake
             )
         } else {
             store.add(
-                name: draft.name, doseDetail: draft.doseDetail, notes: draft.notes,
+                name: draft.name, doseDetail: draft.resolvedDoseDetail, notes: draft.notes,
                 colorName: draft.color.rawValue, schedule: schedule,
                 pillsRemaining: draft.resolvedPills, refillThreshold: draft.resolvedThreshold,
-                importance: draft.importance, form: form
+                importance: draft.importance, form: form,
+                strengthAmount: draft.parsedStrength,
+                strengthUnit: draft.parsedStrength != nil ? draft.strengthUnit : nil,
+                intakeAmount: draft.parsedIntake
             )
         }
         Haptics.success()

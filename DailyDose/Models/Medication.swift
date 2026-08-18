@@ -21,6 +21,10 @@ final class Medication {
     @Attribute(.unique) var id: String = ""
 
     var name: String
+    /// The display line under the name — "500 mg · 2 puffs". Kept as a
+    /// composed string so every surface (cards, sheets, history) renders it
+    /// without understanding structure; the structured fields below are the
+    /// source of truth the editor edits.
     var doseDetail: String
     var notes: String
     var colorName: String
@@ -28,6 +32,19 @@ final class Medication {
     /// the supply unit. Empty means *unspecified*: pre-V5 rows and users who
     /// never chose. `form` reads that as nil — never as an assumed pill.
     var formRaw: String = ""
+
+    // MARK: Structured strength (V6)
+
+    /// "500" in "500 mg". Optional: strength is identity, never a gate —
+    /// "the blue pill, one in the morning" must always be enough.
+    var strengthAmount: Double?
+    /// Empty means unspecified; read through `strengthUnit`.
+    var strengthUnitRaw: String = ""
+    /// How much is taken per dose — the 2 in "2 puffs". The unit is not
+    /// stored: it is derived from `form` (inhaler → puffs, drops → drops),
+    /// so one choice answers both questions and they can never disagree.
+    var intakeAmount: Double?
+
     var isActive: Bool
     var createdAt: Date
 
@@ -87,6 +104,9 @@ final class Medication {
         refillThreshold: Int? = nil,
         importance: MedicationImportance = .standard,
         form: MedicationForm? = nil,
+        strengthAmount: Double? = nil,
+        strengthUnit: StrengthUnit? = nil,
+        intakeAmount: Double? = nil,
         isActive: Bool = true,
         createdAt: Date = .now
     ) {
@@ -96,6 +116,9 @@ final class Medication {
         self.notes = notes
         self.colorName = colorName
         self.formRaw = form?.rawValue ?? ""
+        self.strengthAmount = strengthAmount
+        self.strengthUnitRaw = strengthUnit?.rawValue ?? ""
+        self.intakeAmount = intakeAmount
         self.isActive = isActive
         self.createdAt = createdAt
         self.pillsRemaining = pillsRemaining
@@ -163,6 +186,13 @@ extension Medication {
     var form: MedicationForm? {
         get { formRaw.isEmpty ? nil : MedicationForm(rawValue: formRaw) }
         set { formRaw = newValue?.rawValue ?? "" }
+    }
+
+    /// The strength unit, or nil when unspecified or unknown — same contract
+    /// as `form`.
+    var strengthUnit: StrengthUnit? {
+        get { strengthUnitRaw.isEmpty ? nil : StrengthUnit.named(strengthUnitRaw) }
+        set { strengthUnitRaw = newValue?.rawValue ?? "" }
     }
 
     /// The read-only value passed into the domain layer.

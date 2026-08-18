@@ -248,6 +248,27 @@ struct LabelScanParserTests {
         // A label that declares no form yields no guess.
         #expect(LabelScanParser.parse("ASPIRIN").detectedForm == nil)
     }
+
+    @Test("Strength is also extracted as structure — amount and unit")
+    func extractsStructuredStrength() {
+        let metformin = LabelScanParser.parse("METFORMIN HCL 500 MG TABLET")
+        #expect(metformin.strengthAmount == 500)
+        #expect(metformin.strengthUnit == .mg)
+
+        // European decimal comma, and a unit (`%`) that a trailing word
+        // boundary could never match.
+        let timolol = LabelScanParser.parse("TIMOLOL 0,5 % EYE DROPS")
+        #expect(timolol.strengthAmount == 0.5)
+        #expect(timolol.strengthUnit == .percent)
+
+        #expect(LabelScanParser.parse("VENTOLIN 100 MCG INHALER").strengthUnit == .mcg)
+        #expect(LabelScanParser.parse("VITAMIN D3 2000 IU").strengthUnit == .iu)
+        #expect(LabelScanParser.parse("IBUPROFEN 400MG").strengthAmount == 400)
+
+        // No strength on the label → no structure, and "10gauge" is not 10 g.
+        #expect(LabelScanParser.parse("ASPIRIN").strengthAmount == nil)
+        #expect(LabelScanParser.parse("10gauge needle").strengthAmount == nil)
+    }
 }
 
 @Suite("Medication draft")
@@ -349,6 +370,84 @@ struct MedicationDraftTests {
         #expect(schedule?.kind == .everyXDays)
         #expect(schedule?.intervalDays == 21)
         #expect(schedule?.times.isEmpty == false)
+    }
+
+    @Test("Strength and intake compose the display line")
+    func composesDoseDetail() {
+        var draft = MedicationDraft()
+        draft.form = .inhaler
+        draft.strengthText = "100"
+        draft.strengthUnit = .mcg
+        draft.intakeText = "2"
+        #expect(draft.composedDoseDetail == "100 mcg · 2 puffs")
+        #expect(draft.resolvedDoseDetail == "100 mcg · 2 puffs")
+        #expect(draft.intakeUnitLabel == "puffs")
+
+        // Singular agreement.
+        draft.intakeText = "1"
+        #expect(draft.composedDoseDetail == "100 mcg · 1 puff")
+
+        // A strength without a unit still shows; a unit without a number
+        // is dropped — the number is the fact.
+        draft.intakeText = ""
+        draft.strengthUnit = nil
+        #expect(draft.composedDoseDetail == "100")
+
+        // Nothing structured → the legacy free text survives untouched.
+        draft.strengthText = ""
+        draft.doseDetail = "half a tablet with food"
+        #expect(draft.resolvedDoseDetail == "half a tablet with food")
+    }
+
+    @Test("A dose number that doesn't parse blocks the save, honestly")
+    func invalidDoseNumbers() {
+        var draft = MedicationDraft()
+        draft.name = "Metformin"
+        draft.strengthText = "five hundred"
+        #expect(draft.hasInvalidDoseNumbers)
+        #expect(!draft.isValid)
+
+        draft.strengthText = "0,5"
+        #expect(!draft.hasInvalidDoseNumbers, "European decimal comma parses")
+        #expect(draft.parsedStrength == 0.5)
+    }
+
+    @Test("A scan pre-fills strength, unit and form")
+    func scanPrefill() {
+        let result = LabelScanParser.parse("VENTOLIN INHALER 100 MCG")
+        let draft = MedicationDraft(medication: nil, prefill: result)
+        #expect(draft.strengthText == "100")
+        #expect(draft.strengthUnit == .mcg)
+        #expect(draft.form == .inhaler)
+        #expect(draft.composedDoseDetail == "100 mcg")
+    }
+}
+
+@Suite("Strength unit")
+struct StrengthUnitTests {
+
+    @Test("Every spelling a label or backup might carry resolves")
+    func tolerantResolution() {
+        #expect(StrengthUnit.named("mg") == .mg)
+        #expect(StrengthUnit.named("MG") == .mg)
+        #expect(StrengthUnit.named("milligrams") == .mg)
+        #expect(StrengthUnit.named("µg") == .mcg)
+        #expect(StrengthUnit.named("mcg") == .mcg)
+        #expect(StrengthUnit.named("ml") == .mL)
+        #expect(StrengthUnit.named("%") == .percent)
+        #expect(StrengthUnit.named("IU") == .iu)
+        // Unknown spellings read as unspecified, never as a crash.
+        #expect(StrengthUnit.named("teaspoon") == nil)
+        #expect(StrengthUnit.named("") == nil)
+    }
+
+    @Test("Units print exactly as labels print them")
+    func displayNames() {
+        #expect(StrengthUnit.mg.displayName == "mg")
+        #expect(StrengthUnit.mcg.displayName == "mcg")
+        #expect(StrengthUnit.mL.displayName == "mL")
+        #expect(StrengthUnit.iu.displayName == "IU")
+        #expect(StrengthUnit.percent.displayName == "%")
     }
 }
 

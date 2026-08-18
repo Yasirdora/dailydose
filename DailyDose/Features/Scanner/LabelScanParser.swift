@@ -11,19 +11,27 @@ enum LabelScanParser {
     struct Result: Equatable, Sendable {
         var name: String
         var strength: String
+        /// The strength as structure: "500" and .mg out of "500 MG TABLET".
+        /// Lets the editor pre-fill the amount and pre-select the unit row,
+        /// instead of making the user retype what the label already said.
+        var strengthAmount: Double?
+        var strengthUnit: StrengthUnit?
         /// The form the label itself declared ("tablets", "inhaler"), or nil
         /// when the label said nothing certain. A suggestion to confirm,
         /// never a fact to impose.
         var detectedForm: MedicationForm?
 
-        static let empty = Result(name: "", strength: "", detectedForm: nil)
+        static let empty = Result(name: "", strength: "", strengthAmount: nil, strengthUnit: nil, detectedForm: nil)
         var isEmpty: Bool { name.isEmpty && strength.isEmpty }
     }
 
-    /// A number followed by a dose unit, with a word boundary at each end so
-    /// "10g" inside "10gauge" doesn't register as a strength.
+    /// A number followed by a dose unit, not followed by another letter — so
+    /// "10g" inside "10gauge" doesn't register as a strength, and "0,5 %"
+    /// does (`%` is a non-word character; a trailing `\b` could never match
+    /// after it). The number and the unit are captured separately so the
+    /// structured fields can be filled without re-parsing the composed string.
     private static let strengthPattern =
-        #"\b\d+(?:[.,]\d+)?\s?(?:mg|mcg|µg|ml|iu|g|milligrams?|micrograms?|%)\b"#
+        #"\b(\d+(?:[.,]\d+)?)\s?(mg|mcg|µg|μg|ml|iu|g|milligrams?|micrograms?|%)(?![a-zA-Z])"#
 
     private static let formPattern =
         #"^\s*(tablets?|capsules?|caps?|tabs?|oral|solution|cream|spray|patch|drops?|inhaler|injection|lotion|ointment|suspension|syrup|gel)\b"#
@@ -55,11 +63,19 @@ enum LabelScanParser {
               let match = strengthRegex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range, in: text)
         else {
-            return Result(name: prettifyName(text), strength: "", detectedForm: detectedForm)
+            return Result(name: prettifyName(text), strength: "", strengthAmount: nil, strengthUnit: nil, detectedForm: detectedForm)
         }
 
         var strength = String(text[range])
         let name = String(text[..<range.lowerBound])
+
+        // Structured strength: the captured number and unit, read once here
+        // so nothing downstream has to re-parse the composed string.
+        // "0,5 %" parses as 0.5 — European labels use the decimal comma.
+        let strengthAmount = Range(match.range(at: 1), in: text)
+            .flatMap { Double(text[$0].replacingOccurrences(of: ",", with: ".")) }
+        let strengthUnit = Range(match.range(at: 2), in: text)
+            .flatMap { StrengthUnit.named(String(text[$0])) }
 
         // Absorb a trailing dosage form ("tablet", "capsule") into the strength,
         // where it belongs, instead of leaving it stranded in the name.
@@ -76,6 +92,8 @@ enum LabelScanParser {
         return Result(
             name: prettifyName(trimmedName.isEmpty ? text : trimmedName),
             strength: normalizeStrength(strength),
+            strengthAmount: strengthAmount,
+            strengthUnit: strengthUnit,
             detectedForm: detectedForm
         )
     }
