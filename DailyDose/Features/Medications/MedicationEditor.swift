@@ -167,9 +167,23 @@ struct MedicationEditor: View {
                             }
                         }
                     } label: {
-                        Text(draft.strengthUnit?.displayName ?? String(localized: "unit"))
-                            .foregroundStyle(draft.strengthUnit == nil ? .tertiary : .secondary)
+                        // A capsule with a chevron — the way Apple marks an
+                        // inline choice (Reminders' priority, Health's unit
+                        // pickers). Bare text read as a label; a chip with a
+                        // chevron reads as "tap me". Unset, it wears the
+                        // accent: an invitation, not a placeholder.
+                        HStack(spacing: 4) {
+                            Text(draft.strengthUnit?.displayName ?? String(localized: "unit"))
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption2.weight(.bold))
+                        }
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(draft.strengthUnit == nil ? Theme.accent : .primary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Color(.tertiarySystemFill), in: .capsule)
                     }
+                    .menuIndicator(.hidden)
                     .accessibilityLabel(String(localized: "Strength unit"))
                     .transition(.opacity)
                 }
