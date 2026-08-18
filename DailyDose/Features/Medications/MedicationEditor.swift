@@ -31,7 +31,6 @@ struct MedicationEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                previewSection
                 detailsSection
                 scheduleSection
                 moreOptionsSection
@@ -92,34 +91,6 @@ struct MedicationEditor: View {
 
     // MARK: - Sections
 
-    private var previewSection: some View {
-        Section {
-            HStack(spacing: 16) {
-                MedicationTile(color: draft.color, form: draft.form, size: 52)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(draft.name.isEmpty ? String(localized: "New medication") : draft.name)
-                        .font(.headline)
-                        .foregroundStyle(draft.name.isEmpty ? .secondary : .primary)
-                    Text(draft.resolvedDoseDetail.isEmpty ? String(localized: "Dose") : draft.resolvedDoseDetail)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text(draft.frequencySummary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if !draft.times.isEmpty {
-                        Text(draft.times.sorted().map { $0.formatted() }.joined(separator: " · "))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-            }
-            .padding(.vertical, 6)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(String(localized: "Preview: \(draft.accessibilitySummary)"))
-        }
-    }
-
     /// The unit selector appears only once there is a number to qualify —
     /// options exactly when they become relevant, never before.
     private var showsStrengthUnit: Bool {
@@ -133,13 +104,30 @@ struct MedicationEditor: View {
     private var detailsSection: some View {
         Section {
             if LabelScannerSheet.isAvailable {
-                Button {
-                    route = .scanner
-                } label: {
-                    Label(String(localized: "Scan medication"), systemImage: "camera.viewfinder")
-                        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                Button { route = .scanner } label: {
+                    // The fast path, dressed like one: an accent tile with
+                    // the viewfinder glyph, a plain invitation, and the
+                    // chevron that says "this takes you somewhere". One row,
+                    // same rhythm as the Form row beneath it.
+                    HStack(spacing: 14) {
+                        Image(systemName: "camera.viewfinder")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Theme.accent)
+                            .frame(width: 34, height: 34)
+                            .background(Theme.accent.opacity(0.14), in: .rect(cornerRadius: 9, style: .continuous))
+                            .accessibilityHidden(true)
+                        Text(String(localized: "Scan medication label"))
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .contentShape(.rect)
                 }
-                .secondaryButton()
+                .buttonStyle(SoftPressButtonStyle())
+                .accessibilityHint(String(localized: "Opens the camera to read the bottle's label"))
             }
 
             TextField(String(localized: "Medication name"), text: $draft.name)
@@ -180,7 +168,7 @@ struct MedicationEditor: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(draft.strengthUnit == nil ? Theme.accent : .primary)
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
+                        .padding(.vertical, 4)
                         .background(Color(.tertiarySystemFill), in: .capsule)
                     }
                     .menuIndicator(.hidden)
@@ -188,6 +176,10 @@ struct MedicationEditor: View {
                     .transition(.opacity)
                 }
             }
+            // The row reserves its full height whether or not the chip is
+            // showing — an appearing choice must never shift the line
+            // underneath it.
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsStrengthUnit)
 
             HStack(spacing: 8) {
@@ -201,16 +193,29 @@ struct MedicationEditor: View {
                         .transition(.opacity)
                 }
             }
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsIntakeUnit)
 
             Button { route = .form } label: {
-                // Unchosen reads as an invitation, not an assumption. If the
-                // label scan detected the form it appears here, pre-marked
-                // but still the user's to change.
-                EditorSummaryRow(
-                    label: String(localized: "Form"),
-                    value: draft.form?.displayName ?? String(localized: "Choose")
-                )
+                // The preview card used to float above the form showing
+                // placeholder content in the costume of a real entry. Its
+                // one true magic — watching the tile come alive — now lives
+                // here, where the choice is made: pick a form, the glyph
+                // appears; change the colour below, the tile repaints.
+                HStack(spacing: 14) {
+                    MedicationTile(color: draft.color, form: draft.form, size: 34)
+                    Text(String(localized: "Form"))
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 12)
+                    Text(draft.form?.displayName ?? String(localized: "Choose"))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .contentShape(.rect)
             }
             .buttonStyle(SoftPressButtonStyle())
             .accessibilityHint(String(localized: "Choose whether this is a pill, liquid, injection or another form"))
