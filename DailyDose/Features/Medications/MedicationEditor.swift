@@ -101,104 +101,138 @@ struct MedicationEditor: View {
         !draft.intakeText.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
+    /// A hairline exactly where a native one would sit.
+    private var rowDivider: some View {
+        Divider().padding(.leading, 16)
+    }
+
+    /// Every field row in the Medication card: same margins, same 44pt,
+    /// same leading alignment. One definition, so the rows can never drift
+    /// apart again.
+    private func editorRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 8) { content() }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+    }
+
+    /// A compact capsule with a chevron — the way Apple marks an inline
+    /// choice. Unset, it wears the accent: an invitation, not a placeholder.
+    private var strengthUnitMenu: some View {
+        Menu {
+            ForEach(StrengthUnit.allCases) { unit in
+                Button {
+                    draft.strengthUnit = unit
+                    Haptics.select()
+                } label: {
+                    if draft.strengthUnit == unit {
+                        Label(unit.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(unit.displayName)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(draft.strengthUnit?.displayName ?? String(localized: "unit"))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.bold))
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(draft.strengthUnit == nil ? Theme.accent : .primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 3)
+            .background(Color(.tertiarySystemFill), in: .capsule)
+        }
+        .menuIndicator(.hidden)
+        .accessibilityLabel(String(localized: "Strength unit"))
+    }
+
+    /// One row, one divider, one rhythm — built by hand.
+    ///
+    /// The system's separators derive their insets from row content, and a
+    /// custom HStack confuses that logic: the result was dividers rendered
+    /// as stubs at the trailing edge. So this card opts out entirely — a
+    /// single VStack with explicit hairlines, every row exactly 44pt, every
+    /// divider exactly where a native one would sit.
     private var detailsSection: some View {
         Section {
-            // The fast path, first row, in the quiet glass she already
-            // called beautiful: full-width, camera glyph, nothing louder.
-            if LabelScannerSheet.isAvailable {
-                Button { route = .scanner } label: {
-                    Label(String(localized: "Scan Medication"), systemImage: "camera.viewfinder")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .contentShape(.rect)
-                }
-                .secondaryButton()
-                .accessibilityHint(String(localized: "Opens the camera to read the bottle's label"))
-            }
-
-            TextField(String(localized: "Medication name"), text: $draft.name)
-                .textInputAutocapitalization(.words)
-
-            // Placeholder-first: at rest each row is a single quiet line.
-            // The unit appears the moment a number does — options exactly
-            // when they become relevant, never before. Everything optional:
-            // "the blue pill, one in the morning" is always enough to save.
-            HStack(spacing: 8) {
-                TextField(String(localized: "Strength (e.g. 500)"), text: $draft.strengthText)
-                    .keyboardType(.decimalPad)
-                if showsStrengthUnit {
-                    Menu {
-                        ForEach(StrengthUnit.allCases) { unit in
-                            Button {
-                                draft.strengthUnit = unit
-                                Haptics.select()
-                            } label: {
-                                if draft.strengthUnit == unit {
-                                    Label(unit.displayName, systemImage: "checkmark")
-                                } else {
-                                    Text(unit.displayName)
-                                }
-                            }
-                        }
-                    } label: {
-                        // A compact capsule with a chevron — the way Apple
-                        // marks an inline choice. Unset, it wears the accent:
-                        // an invitation, not a placeholder. Small enough that
-                        // its arrival never breaks the row's line.
-                        HStack(spacing: 3) {
-                            Text(draft.strengthUnit?.displayName ?? String(localized: "unit"))
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption2.weight(.bold))
-                        }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(draft.strengthUnit == nil ? Theme.accent : .primary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 3)
-                        .background(Color(.tertiarySystemFill), in: .capsule)
+            VStack(spacing: 0) {
+                // The fast path, first, in the quiet glass she already
+                // called beautiful: full-width, camera glyph, nothing louder.
+                if LabelScannerSheet.isAvailable {
+                    Button { route = .scanner } label: {
+                        Label(String(localized: "Scan Medication"), systemImage: "camera.viewfinder")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .contentShape(.rect)
                     }
-                    .menuIndicator(.hidden)
-                    .accessibilityLabel(String(localized: "Strength unit"))
-                    .transition(.opacity)
+                    .secondaryButton()
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .accessibilityHint(String(localized: "Opens the camera to read the bottle's label"))
+                    rowDivider
                 }
-            }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsStrengthUnit)
 
-            HStack(spacing: 8) {
-                TextField(String(localized: "Amount per dose (e.g. 1)"), text: $draft.intakeText)
-                    .keyboardType(.decimalPad)
-                if showsIntakeUnit {
-                    // The unit is whispered, not asked: the form choice
-                    // already answered it.
-                    Text(draft.intakeUnitLabel)
-                        .foregroundStyle(.secondary)
-                        .transition(.opacity)
+                editorRow {
+                    TextField(String(localized: "Medication name"), text: $draft.name)
+                        .textInputAutocapitalization(.words)
                 }
-            }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsIntakeUnit)
+                rowDivider
 
-            Button { route = .form } label: {
-                // The preview card used to float above the form showing
-                // placeholder content in the costume of a real entry. Its
-                // one true magic — watching the tile come alive — now lives
-                // here, where the choice is made: pick a form, the glyph
-                // appears; change the colour below, the tile repaints.
-                HStack(spacing: 14) {
-                    MedicationTile(color: draft.color, form: draft.form, size: 30)
-                    Text(String(localized: "Form"))
-                        .foregroundStyle(.primary)
-                    Spacer(minLength: 12)
-                    Text(draft.form?.displayName ?? String(localized: "Choose"))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.trailing)
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                // Placeholder-first: at rest each row is a single quiet
+                // line. The unit appears the moment a number does — options
+                // exactly when they become relevant, never before.
+                editorRow {
+                    TextField(String(localized: "Strength (e.g. 500)"), text: $draft.strengthText)
+                        .keyboardType(.decimalPad)
+                    if showsStrengthUnit {
+                        strengthUnitMenu
+                            .transition(.opacity)
+                    }
                 }
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .contentShape(.rect)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsStrengthUnit)
+                rowDivider
+
+                editorRow {
+                    TextField(String(localized: "Amount per dose (e.g. 1)"), text: $draft.intakeText)
+                        .keyboardType(.decimalPad)
+                    if showsIntakeUnit {
+                        // The unit is whispered, not asked: the form choice
+                        // already answered it.
+                        Text(draft.intakeUnitLabel)
+                            .foregroundStyle(.secondary)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsIntakeUnit)
+                rowDivider
+
+                Button { route = .form } label: {
+                    // The preview card's one true magic — watching the tile
+                    // come alive — lives here, where the choice is made:
+                    // pick a form, the glyph appears; change the colour
+                    // below, the tile repaints.
+                    HStack(spacing: 12) {
+                        MedicationTile(color: draft.color, form: draft.form, size: 28)
+                        Text(String(localized: "Form"))
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 12)
+                        Text(draft.form?.displayName ?? String(localized: "Choose"))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(SoftPressButtonStyle())
+                .accessibilityHint(String(localized: "Choose whether this is a pill, liquid, injection or another form"))
             }
-            .buttonStyle(SoftPressButtonStyle())
-            .accessibilityHint(String(localized: "Choose whether this is a pill, liquid, injection or another form"))
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
         } header: {
             Text(String(localized: "Medication"))
         } footer: {
