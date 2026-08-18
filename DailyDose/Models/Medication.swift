@@ -24,6 +24,9 @@ final class Medication {
     var doseDetail: String
     var notes: String
     var colorName: String
+    /// Physical form — pill, inhaler, injection… Drives the tile glyph and
+    /// the supply unit. Empty on pre-V5 rows; `form` resolves that to `.pill`.
+    var formRaw: String = ""
     var isActive: Bool
     var createdAt: Date
 
@@ -82,6 +85,7 @@ final class Medication {
         pillsRemaining: Int? = nil,
         refillThreshold: Int? = nil,
         importance: MedicationImportance = .standard,
+        form: MedicationForm = .default,
         isActive: Bool = true,
         createdAt: Date = .now
     ) {
@@ -90,6 +94,7 @@ final class Medication {
         self.doseDetail = doseDetail
         self.notes = notes
         self.colorName = colorName
+        self.formRaw = form.rawValue
         self.isActive = isActive
         self.createdAt = createdAt
         self.pillsRemaining = pillsRemaining
@@ -151,6 +156,13 @@ extension Medication {
         set { importanceRaw = newValue.rawValue }
     }
 
+    /// The physical form, resolved tolerantly — empty and unknown raw values
+    /// both read as the default rather than poisoning a screen.
+    var form: MedicationForm {
+        get { MedicationForm.named(formRaw) }
+        set { formRaw = newValue.rawValue }
+    }
+
     /// The read-only value passed into the domain layer.
     var snapshot: MedicationSnapshot {
         MedicationSnapshot(
@@ -163,7 +175,8 @@ extension Medication {
             schedule: schedule,
             pillsRemaining: pillsRemaining,
             refillThreshold: refillThreshold,
-            importance: importance
+            importance: importance,
+            form: form
         )
     }
 

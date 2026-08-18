@@ -44,7 +44,7 @@ struct MigrationTests {
         // The plan chains V1→V2 (custom), V2→V3 and V3→V4 (both lightweight);
         // the app boots with the latest schema, so that is what the store is
         // opened with here.
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV4.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV5.self)
         let container = try ModelContainer(
             for: currentSchema,
             migrationPlan: DailyDoseMigrationPlan.self,
@@ -123,7 +123,7 @@ struct MigrationTests {
         try v2Context.save()
 
         // --- Reopen through the migration plan, as the updated app does. ---
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV4.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV5.self)
         let container = try ModelContainer(
             for: currentSchema,
             migrationPlan: DailyDoseMigrationPlan.self,
@@ -180,7 +180,7 @@ struct MigrationTests {
         ))
         try v2Context.save()
 
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV4.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV5.self)
         for pass in 1...2 {
             let container = try ModelContainer(
                 for: currentSchema,
@@ -220,7 +220,7 @@ struct MigrationTests {
         ))
         try v3Context.save()
 
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV4.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV5.self)
         let container = try ModelContainer(
             for: currentSchema,
             migrationPlan: DailyDoseMigrationPlan.self,
@@ -233,5 +233,56 @@ struct MigrationTests {
         #expect(events.first?.scheduledWallKey == "")
         #expect(events.first?.scheduledAt == scheduled)
         #expect(events.first?.medicationName == "Metformin")
+    }
+
+    /// The shape on every phone running the previous build, opened by the new
+    /// one: the form column arrives empty, resolves to the default `.pill`,
+    /// and everything else is untouched.
+    @Test("A V4 store lightweight-migrates to V5")
+    func v4StoreMigrates() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("migration-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("DailyDose.store")
+
+        let v4Schema = Schema(versionedSchema: DailyDoseSchemaV4.self)
+        let v4Container = try ModelContainer(
+            for: v4Schema,
+            configurations: [ModelConfiguration(schema: v4Schema, url: url)]
+        )
+        let v4Context = ModelContext(v4Container)
+        let medication = DailyDoseSchemaV4.Medication(name: "Metformin")
+        medication.id = "v4-id-1"
+        medication.pillsRemaining = 60
+        medication.refillThreshold = 10
+        let scheduled = Fixture.date(2026, 8, 10, 8)
+        v4Context.insert(medication)
+        v4Context.insert(DailyDoseSchemaV4.DoseEvent(
+            medication: medication, scheduledAt: scheduled, statusRaw: "taken", loggedAt: scheduled
+        ))
+        try v4Context.save()
+
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV5.self)
+        let container = try ModelContainer(
+            for: currentSchema,
+            migrationPlan: DailyDoseMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: currentSchema, url: url)]
+        )
+        let context = ModelContext(container)
+        let medications = try context.fetch(FetchDescriptor<Medication>())
+        let events = try context.fetch(FetchDescriptor<DoseEvent>())
+
+        #expect(medications.count == 1)
+        let migrated = try #require(medications.first)
+        #expect(migrated.id == "v4-id-1")
+        #expect(migrated.pillsRemaining == 60)
+        // Pre-form rows read as the default form, never as a crash or a blank tile.
+        #expect(migrated.formRaw == "")
+        #expect(migrated.form == .pill)
+
+        #expect(events.count == 1)
+        #expect(events.first?.medicationName == "Metformin")
+        #expect(events.first?.scheduledAt == scheduled)
     }
 }

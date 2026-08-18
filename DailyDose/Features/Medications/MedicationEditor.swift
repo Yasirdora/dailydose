@@ -21,9 +21,10 @@ struct MedicationEditor: View {
     /// The essentials stay visible. Everything else is available without
     /// making a first-time setup feel like a medical intake form.
     @State private var showsMoreOptions = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Route: String, Identifiable {
-        case scanner, frequency, duration
+        case scanner, frequency, duration, form
         var id: String { rawValue }
     }
 
@@ -61,6 +62,15 @@ struct MedicationEditor: View {
                 guard !didLoad else { return }
                 didLoad = true
                 draft = MedicationDraft(medication: medication, prefill: prefill)
+                // Editing a medication that already has notes, supply or
+                // custom reminders opens with those sections expanded — the
+                // screen should reflect what is configured, not hide it.
+                if let medication {
+                    showsMoreOptions = !medication.notes.isEmpty
+                        || medication.pillsRemaining != nil
+                        || medication.importance != .standard
+                        || MedicationColor.named(medication.colorName) != .default
+                }
             }
             .sheet(item: $route) { route in
                 switch route {
@@ -73,6 +83,8 @@ struct MedicationEditor: View {
                     FrequencyPicker(draft: $draft)
                 case .duration:
                     DurationPicker(draft: $draft)
+                case .form:
+                    FormPicker(selection: $draft.form)
                 }
             }
         }
@@ -83,7 +95,7 @@ struct MedicationEditor: View {
     private var previewSection: some View {
         Section {
             HStack(spacing: 16) {
-                MedicationTile(color: draft.color, size: 52)
+                MedicationTile(color: draft.color, form: draft.form, size: 52)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(draft.name.isEmpty ? String(localized: "New medication") : draft.name)
                         .font(.headline)
@@ -123,6 +135,15 @@ struct MedicationEditor: View {
             TextField(String(localized: "Medication name"), text: $draft.name)
                 .textInputAutocapitalization(.words)
             TextField(String(localized: "Strength or dose (e.g. 500 mg, 1 tablet)"), text: $draft.doseDetail)
+
+            Button { route = .form } label: {
+                EditorSummaryRow(
+                    label: String(localized: "Form"),
+                    value: draft.form.displayName
+                )
+            }
+            .buttonStyle(SoftPressButtonStyle())
+            .accessibilityHint(String(localized: "Choose whether this is a pill, liquid, injection or another form"))
         } header: {
             Text(String(localized: "Medication"))
         } footer: {
@@ -143,7 +164,7 @@ struct MedicationEditor: View {
                     value: draft.frequencySummary
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SoftPressButtonStyle())
             .accessibilityHint(String(localized: "Choose how often this medication is taken"))
 
             if draft.kind == .everyXDays {
@@ -217,7 +238,7 @@ struct MedicationEditor: View {
                     value: draft.durationSummary
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SoftPressButtonStyle())
             .accessibilityHint(String(localized: "Choose whether this medication has an end date"))
         } header: {
             Text(String(localized: "Schedule"))
@@ -242,8 +263,12 @@ struct MedicationEditor: View {
     private var moreOptionsSection: some View {
         Section {
             Button {
-                withAnimation(.smooth(duration: 0.25)) {
+                if reduceMotion {
                     showsMoreOptions.toggle()
+                } else {
+                    withAnimation(.smooth(duration: 0.25)) {
+                        showsMoreOptions.toggle()
+                    }
                 }
                 Haptics.select()
             } label: {
@@ -266,7 +291,7 @@ struct MedicationEditor: View {
                 .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
                 .contentShape(.rect)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SoftPressButtonStyle())
             .accessibilityHint(
                 showsMoreOptions
                     ? String(localized: "Hides optional medication details")
@@ -387,14 +412,14 @@ struct MedicationEditor: View {
                 name: draft.name, doseDetail: draft.doseDetail, notes: draft.notes,
                 colorName: draft.color.rawValue, schedule: schedule,
                 pillsRemaining: draft.resolvedPills, refillThreshold: draft.resolvedThreshold,
-                importance: draft.importance
+                importance: draft.importance, form: draft.form
             )
         } else {
             store.add(
                 name: draft.name, doseDetail: draft.doseDetail, notes: draft.notes,
                 colorName: draft.color.rawValue, schedule: schedule,
                 pillsRemaining: draft.resolvedPills, refillThreshold: draft.resolvedThreshold,
-                importance: draft.importance
+                importance: draft.importance, form: draft.form
             )
         }
         Haptics.success()
@@ -482,11 +507,21 @@ private struct FrequencyPicker: View {
                         .frame(maxWidth: .infinity, minHeight: 56)
                         .contentShape(.rect)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(SoftPressButtonStyle())
                 }
             }
             .navigationTitle(String(localized: "How often do you take it?"))
             .navigationBarTitleDisplayMode(.inline)
+            // Selecting marks the choice; leaving is the user's own decision.
+            // A tap that also dismisses the sheet feels — especially to an
+            // older user — like the app decided for them, and a mistap costs
+            // a round trip back in. Apple's own pick-from-list screens stay
+            // open with a checkmark; so do we.
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(String(localized: "Done")) { dismiss() }
+                }
+            }
             .navigationDestination(isPresented: $isShowingMoreSchedules) {
                 MoreSchedulesPicker(selectedKind: draft.kind) { kind in
                     withAnimation(.smooth(duration: 0.2)) {
@@ -497,7 +532,9 @@ private struct FrequencyPicker: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        // .large as well as .medium: the pushed "More schedules" page needs
+        // room, and the system shrinks back down when it pops.
+        .presentationDetents([.medium, .large])
     }
 
     private func dailyTitle(_ count: Int) -> String {
@@ -512,7 +549,6 @@ private struct FrequencyPicker: View {
         Button {
             withAnimation(.smooth(duration: 0.2)) { action() }
             Haptics.select()
-            dismiss()
         } label: {
             HStack {
                 Text(title).foregroundStyle(.primary)
@@ -675,5 +711,80 @@ private struct DurationPicker: View {
             }
         }
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+// MARK: - Form picker
+
+/// "What form is it?" — the question a pharmacist asks before anything else.
+/// The answer chooses the glyph on every tile and the unit the supply counter
+/// speaks in. Like the frequency picker, selection stays open with a
+/// checkmark; the user leaves through Done, on their own terms.
+private struct FormPicker: View {
+    @Binding var selection: MedicationForm
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(MedicationForm.allCases) { form in
+                        row(form)
+                    }
+                } footer: {
+                    Text(String(localized: "This sets the icon and how your supply is counted — pills, puffs, drops."))
+                }
+            }
+            .navigationTitle(String(localized: "What form is it?"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(String(localized: "Done")) { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func row(_ form: MedicationForm) -> some View {
+        Button {
+            selection = form
+            Haptics.select()
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: form.systemImage)
+                    .font(.body)
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: 34, height: 34)
+                    .background(Theme.accent.opacity(0.12), in: .rect(cornerRadius: 9, style: .continuous))
+                    .accessibilityHidden(true)
+                Text(form.displayName)
+                    .foregroundStyle(.primary)
+                Spacer()
+                if selection == form {
+                    Image(systemName: "checkmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Theme.accent)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .contentShape(.rect)
+        }
+        .buttonStyle(SoftPressButtonStyle())
+        .accessibilityAddTraits(selection == form ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+// MARK: - Soft press
+
+/// The pressed-state feedback `.plain` never gives. A row that doesn't
+/// answer a touch feels broken — especially on sheets where a mistap costs
+/// a round trip. Opacity, not scale: scale on a full-width row reads as a
+/// layout glitch, opacity reads as "I heard you".
+private struct SoftPressButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.55 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }

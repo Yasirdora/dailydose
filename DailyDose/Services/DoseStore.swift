@@ -228,7 +228,8 @@ final class DoseStore {
         schedule: DoseSchedule,
         pillsRemaining: Int?,
         refillThreshold: Int?,
-        importance: MedicationImportance = .standard
+        importance: MedicationImportance = .standard,
+        form: MedicationForm = .default
     ) -> Medication {
         let medication = Medication(
             name: name.singleLine,
@@ -238,7 +239,8 @@ final class DoseStore {
             schedule: schedule,
             pillsRemaining: pillsRemaining,
             refillThreshold: refillThreshold,
-            importance: importance
+            importance: importance,
+            form: form
         )
         context.insert(medication)
         persist()
@@ -255,12 +257,14 @@ final class DoseStore {
         schedule: DoseSchedule,
         pillsRemaining: Int?,
         refillThreshold: Int?,
-        importance: MedicationImportance = .standard
+        importance: MedicationImportance = .standard,
+        form: MedicationForm = .default
     ) {
         medication.name = name.singleLine
         medication.doseDetail = doseDetail.singleLine
         medication.notes = notes.singleLine
         medication.colorName = colorName
+        medication.form = form
         medication.schedule = schedule
         medication.pillsRemaining = pillsRemaining
         medication.refillThreshold = refillThreshold

@@ -48,7 +48,11 @@ struct MedicationDaySheet: View {
 
     private var hero: some View {
         HStack(spacing: 14) {
-            MedicationTile(color: MedicationColor.named(card.medication.colorName), size: 56)
+            MedicationTile(
+                color: MedicationColor.named(card.medication.colorName),
+                form: card.medication.form,
+                size: 56
+            )
             VStack(alignment: .leading, spacing: 3) {
                 Text(card.medication.name)
                     .font(.title3.bold())

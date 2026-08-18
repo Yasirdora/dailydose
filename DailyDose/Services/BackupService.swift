@@ -33,6 +33,9 @@ enum BackupService {
         var doseDetail: String
         var notes: String
         var colorName: String
+        /// Physical form raw value. Optional so archives written before V5
+        /// still decode; nil resolves to the default form.
+        var formRaw: String? = nil
         var isActive: Bool
         var createdAt: Date
 
@@ -82,6 +85,7 @@ enum BackupService {
                     doseDetail: medication.doseDetail,
                     notes: medication.notes,
                     colorName: medication.colorName,
+                    formRaw: medication.formRaw,
                     isActive: medication.isActive,
                     createdAt: medication.createdAt,
                     scheduleKind: schedule.kind.rawValue,
@@ -183,6 +187,7 @@ enum BackupService {
                 existing.doseDetail = record.doseDetail
                 existing.notes = record.notes
                 existing.colorName = record.colorName
+                if let formRaw = record.formRaw { existing.formRaw = formRaw }
                 existing.isActive = record.isActive
                 existing.schedule = schedule
                 existing.pillsRemaining = record.pillsRemaining
@@ -198,6 +203,7 @@ enum BackupService {
                     schedule: schedule,
                     pillsRemaining: record.pillsRemaining,
                     refillThreshold: record.refillThreshold,
+                    form: MedicationForm.named(record.formRaw ?? ""),
                     isActive: record.isActive,
                     createdAt: record.createdAt
                 )

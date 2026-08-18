@@ -310,6 +310,8 @@ struct MedicationSnapshot: Identifiable, Equatable, Sendable {
     /// How much this medication is allowed to interrupt. A vitamin and a heart
     /// medication should not arrive with the same urgency.
     var importance: MedicationImportance = .standard
+    /// Physical form — drives the tile glyph and the supply unit language.
+    var form: MedicationForm = .default
 
     var isLowOnSupply: Bool {
         guard let pillsRemaining, let refillThreshold else { return false }

@@ -493,6 +493,7 @@ enum NotificationPlanner {
             else { continue }
 
             let remaining = medication.pillsRemaining ?? 0
+            let unit = medication.form.supplyUnit(count: remaining)
             notifications.append(
                 PlannedNotification(
                     id: "refill-\(medication.id)",
@@ -500,8 +501,8 @@ enum NotificationPlanner {
                     trigger: .once(fireAt),
                     title: String(localized: "\(medication.name) is running low"),
                     body: remaining <= 0
-                        ? String(localized: "No doses left — time for a refill.")
-                        : String(localized: "\(remaining) left — plan a refill soon."),
+                        ? String(localized: "No \(unit) left — time for a refill.")
+                        : String(localized: "\(remaining) \(unit) left — plan a refill soon."),
                     // Supply is never urgent enough to break through Focus.
                     importance: .gentle,
                     sound: preferences.refillSound,

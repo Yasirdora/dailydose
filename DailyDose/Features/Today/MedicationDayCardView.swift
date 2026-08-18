@@ -124,6 +124,7 @@ struct MedicationDayCardView: View {
         HStack(spacing: 14) {
             MedicationTile(
                 color: MedicationColor.named(card.medication.colorName),
+                form: card.medication.form,
                 badge: headerBadge
             )
             .overlay(alignment: .topTrailing) {

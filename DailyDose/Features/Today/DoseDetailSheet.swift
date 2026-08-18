@@ -89,7 +89,7 @@ struct DoseDetailSheet: View {
     private var card: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                MedicationTile(color: dose.color, size: 44)
+                MedicationTile(color: dose.color, form: dose.medication.form, size: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(dose.medication.name)
                         .font(.headline)

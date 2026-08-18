@@ -8,6 +8,7 @@ import SwiftUI
 /// a 48pt square next to 40pt text at accessibility sizes.
 struct MedicationTile: View {
     let color: MedicationColor
+    var form: MedicationForm = .pill
     var size: CGFloat = 48
     var badge: Badge?
 
@@ -40,7 +41,7 @@ struct MedicationTile: View {
             .fill(color.color.gradient)
             .frame(width: resolved, height: resolved)
             .overlay {
-                Image(systemName: "pill.fill")
+                Image(systemName: form.systemImage)
                     .font(.system(size: resolved * 0.38))
                     // Contrast-correct against this specific swatch, not
                     // assumed white.

@@ -10,6 +10,8 @@ struct MedicationDraft: Equatable {
     var doseDetail = ""
     var notes = ""
     var color = MedicationColor.default
+    /// Physical form — drives the tile glyph and the supply unit language.
+    var form = MedicationForm.default
 
     var kind: ScheduleKind = .daily
     /// A `Set`, so two doses can never occupy the same minute — the condition
@@ -54,6 +56,7 @@ struct MedicationDraft: Equatable {
         doseDetail = medication.doseDetail
         notes = medication.notes
         color = MedicationColor.named(medication.colorName)
+        form = medication.form
         kind = schedule.kind
         times = schedule.times.isEmpty ? [.morning] : schedule.times
         weekdays = schedule.weekdays.isEmpty ? Set(1...7) : schedule.weekdays

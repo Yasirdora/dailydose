@@ -158,6 +158,7 @@ struct MedicationCard: View {
             HStack(spacing: 12) {
                 MedicationTile(
                     color: color,
+                    form: medication.form,
                     size: 54,
                     badge: medication.needsSchedule ? .needsSetup : nil
                 )

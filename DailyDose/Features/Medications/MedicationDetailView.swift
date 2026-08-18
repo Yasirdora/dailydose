@@ -65,7 +65,7 @@ struct MedicationDetailView: View {
     private var heroSection: some View {
         Section {
             VStack(spacing: 10) {
-                MedicationTile(color: color, size: 88)
+                MedicationTile(color: color, form: medication.form, size: 88)
                     .shadow(color: color.color.opacity(0.3), radius: 12, y: 6)
 
                 Text(medication.displayName)
@@ -154,7 +154,7 @@ struct MedicationDetailView: View {
                     .contentTransition(.numericText())
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(String(localized: "doses left")).font(.subheadline)
+                    Text(String(localized: "\(medication.form.supplyUnit(count: medication.pillsRemaining ?? 0)) left")).font(.subheadline)
                     if let threshold = medication.refillThreshold {
                         Text(String(localized: "warns at \(threshold)"))
                             .font(.caption)
