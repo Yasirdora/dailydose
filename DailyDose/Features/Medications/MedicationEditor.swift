@@ -30,16 +30,41 @@ struct MedicationEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                detailsSection
-                scheduleSection
-                moreOptionsSection
+            VStack(spacing: 0) {
+                // The fast path lives *outside* the form entirely: pinned
+                // above it, always visible, always reachable — scroll or
+                // keyboard can never hide it. For the people this app
+                // serves, pointing the camera at the bottle beats typing
+                // every time. (Ysr's mother, user testing in the wild.)
+                if LabelScannerSheet.isAvailable {
+                    Button { route = .scanner } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "camera.viewfinder")
+                                .font(.headline)
+                            Text(String(localized: "Scan Medication"))
+                                .font(.headline)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 56)
+                        .contentShape(.rect)
+                    }
+                    .prominentButton()
+                    .tint(Theme.accent)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .accessibilityHint(String(localized: "Opens the camera to read the bottle's label"))
+                }
 
-                if showsMoreOptions {
-                    notesSection
-                    supplySection
-                    remindersSection
-                    colorSection
+                Form {
+                    detailsSection
+                    scheduleSection
+                    moreOptionsSection
+
+                    if showsMoreOptions {
+                        notesSection
+                        supplySection
+                        remindersSection
+                        colorSection
+                    }
                 }
             }
             .navigationTitle(medication == nil
@@ -102,37 +127,6 @@ struct MedicationEditor: View {
     }
 
     private var detailsSection: some View {
-        // Two sections from one property: the Group is transparent to the
-        // Form but lets the builder combine them.
-        Group {
-        // The scan button floats *above* the card: its own section with a
-        // clear background, so it reads as a hero action, not a form field.
-        Section {
-            // The fast path, announced: a full-width glass-prominent
-            // capsule in the app's cyan — the boldest thing on the
-            // screen, in the same Liquid Glass language as the rest of
-            // the app. For the people this app serves, pointing the
-            // camera at the bottle beats typing every time. (Ysr's
-            // mother, user testing in the wild.)
-            if LabelScannerSheet.isAvailable {
-                Button { route = .scanner } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "camera.viewfinder")
-                            .font(.headline)
-                        Text(String(localized: "Scan Medication"))
-                            .font(.headline)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 56)
-                    .contentShape(.rect)
-                }
-                .prominentButton()
-                .tint(Theme.accent)
-                .accessibilityHint(String(localized: "Opens the camera to read the bottle's label"))
-            }
-        }
-        .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 2, trailing: 16))
-
         Section {
             // One rhythm for the whole card: every row is 52pt, so nothing
             // shifts when the unit chips appear and the eye can rest.
@@ -238,7 +232,6 @@ struct MedicationEditor: View {
             } else {
                 Text(String(localized: "You can add notes, supply tracking and reminder preferences under More Options."))
             }
-        }
         }
     }
 
