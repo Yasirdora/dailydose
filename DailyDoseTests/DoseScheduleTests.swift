@@ -494,3 +494,94 @@ struct TimeOfDayTests {
         }
     }
 }
+
+/// What the Save button is doing when it greys out.
+///
+/// Device testing reported "failing to select … supply" with no more detail,
+/// and there were two candidate explanations: the toggle not responding to
+/// taps, or the toggle working perfectly and disabling Save. These pin the
+/// second, so the diagnosis is a fact rather than a reading of the view code.
+@Suite("Supply validation")
+struct SupplyValidationTests {
+
+    private func draft() -> MedicationDraft {
+        var draft = MedicationDraft()
+        draft.name = "Metformin"
+        draft.times = [Fixture.time(8)]
+        return draft
+    }
+
+    /// The toggle is not broken. Turning it on with the count still blank is
+    /// what disables Save — and that rule is deliberate: a blank count used to
+    /// persist as 0, and `0 <= 0` fired a refill alert on a box the user had
+    /// just filled.
+    @Test("Turning supply tracking on with no count disables Save")
+    func trackingWithoutACountBlocksSave() {
+        var draft = draft()
+        #expect(draft.isValid, "a plain medication saves")
+
+        draft.tracksSupply = true
+        #expect(draft.isMissingSupplyCount)
+        #expect(!draft.isValid, "this is what the user saw as a dead Save button")
+
+        draft.pillsRemaining = 30
+        #expect(!draft.isMissingSupplyCount)
+        #expect(draft.isValid, "and typing a count releases it")
+    }
+
+    /// The warning level may stay blank — it means "don't warn me". Only the
+    /// count is required, because tracking supply without one is meaningless.
+    @Test("The warning level is optional; only the count is required")
+    func thresholdStaysOptional() {
+        var draft = draft()
+        draft.tracksSupply = true
+        draft.pillsRemaining = 30
+        #expect(draft.refillThreshold == nil)
+        #expect(draft.isValid)
+    }
+
+    /// Turning tracking back off must clear the block rather than strand the
+    /// user with a button they cannot explain.
+    @Test("Turning tracking off again releases Save")
+    func togglingOffReleasesSave() {
+        var draft = draft()
+        draft.tracksSupply = true
+        #expect(!draft.isValid)
+        draft.tracksSupply = false
+        #expect(draft.isValid)
+    }
+
+    /// Every blocked state names itself. The Save button and this string read
+    /// the same properties, so a dimmed button can never appear with nothing on
+    /// screen saying why.
+    @Test("Each reason Save is blocked has a message, and a valid draft has none")
+    func blockingReasonNamesEveryCase() {
+        #expect(draft().blockingReason == nil)
+
+        var noName = draft()
+        noName.name = "   "
+        #expect(noName.blockingReason != nil)
+
+        var noTimes = draft()
+        noTimes.times = []
+        #expect(noTimes.blockingReason != nil)
+
+        var badNumber = draft()
+        badNumber.strengthText = "thirty"
+        #expect(badNumber.blockingReason != nil)
+
+        var noDays = draft()
+        noDays.kind = .weekdays
+        noDays.weekdays = []
+        #expect(noDays.blockingReason != nil)
+
+        var backwards = draft()
+        backwards.startDate = Fixture.date(2026, 8, 10)
+        backwards.endDate = Fixture.date(2026, 8, 1)
+        #expect(backwards.blockingReason != nil)
+
+        var supply = draft()
+        supply.tracksSupply = true
+        #expect(supply.blockingReason != nil)
+    }
+}

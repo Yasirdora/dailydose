@@ -81,8 +81,7 @@ struct MedicationDraft: Equatable {
     init(
         medication: Medication?,
         prefill: LabelScanParser.Result? = nil,
-        pack: ScannedPack? = nil,
-        product: DrugDirectory.Entry? = nil
+        pack: ScannedPack? = nil
     ) {
         productKey = pack?.key
         expiryDate = pack?.expiry?.day
@@ -100,11 +99,6 @@ struct MedicationDraft: Equatable {
                     strengthUnit = prefill.strengthUnit
                 }
             }
-            // The directory speaks last, because it speaks from a check digit
-            // rather than from pixels: where it and the camera disagree about a
-            // name or a strength, the code is the one that cannot have misread
-            // a 5 as an S.
-            if let product { apply(product) }
             // Seeding is not editing: a scan that filled the field must still
             // be clearable without the free text coming back.
             didEditDose = false
@@ -115,9 +109,6 @@ struct MedicationDraft: Equatable {
         // editor to change a dose time does not.
         productKey = pack?.key ?? medication.productKey
         expiryDate = pack?.expiry?.day ?? medication.expiryDate
-        // `product` is deliberately not applied here. The user has already
-        // named this medication; a directory entry must not rewrite what they
-        // chose to call their own medicine just because they scanned a refill.
         name = medication.displayName
         doseDetail = medication.doseDetail
         notes = medication.notes
@@ -162,16 +153,44 @@ struct MedicationDraft: Equatable {
     var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     /// Every reason a draft can be unsaveable is a named property, not a
-    /// clause buried in `isValid`. The Save button and the footer that
-    /// explains it then read the same source, so the button can never grey
-    /// out with nothing on screen saying why.
-    var isValid: Bool {
-        !trimmedName.isEmpty
-            && !times.isEmpty
-            && !hasInvalidDoseNumbers
-            && !hasEmptyWeekdays
-            && !hasEndBeforeStart
-            && !isMissingSupplyCount
+    /// clause buried here. The Save button and the sentence explaining it read
+    /// the same source, so the button can never grey out with nothing on
+    /// screen saying why.
+    var isValid: Bool { blockingReason == nil }
+
+    /// Why Save is dimmed, in the order the fields appear on screen.
+    ///
+    /// The per-card footers already explained each of these, but a footer only
+    /// helps someone looking at it. Turning on "Track supply" leaves the count
+    /// blank, which disables Save — correctly, because a blank count used to
+    /// persist as 0 and `0 <= 0` fired a refill alert on a box the user had
+    /// just filled — and the explanation for that sits in the supply card while
+    /// the dimmed button is up in the toolbar. On device that read as a broken
+    /// toggle. The rule is right; it was the sentence that was in the wrong
+    /// place, so this one is pinned under the toolbar beside Save.
+    ///
+    /// `isValid` is derived from this rather than the other way round: one
+    /// source, so the button and the reason can never disagree.
+    var blockingReason: String? {
+        if trimmedName.isEmpty {
+            return String(localized: "Enter the medication name to continue.")
+        }
+        if hasInvalidDoseNumbers {
+            return String(localized: "Strength and amount should be numbers, like 500 or 0.5.")
+        }
+        if times.isEmpty {
+            return String(localized: "Add at least one time of day.")
+        }
+        if hasEmptyWeekdays {
+            return String(localized: "Choose at least one day of the week.")
+        }
+        if hasEndBeforeStart {
+            return String(localized: "The end date is before the start date.")
+        }
+        if isMissingSupplyCount {
+            return String(localized: "Enter how many doses you have on hand, or turn tracking off.")
+        }
+        return nil
     }
 
     /// "Specific days" with every day deselected: a schedule that can never
@@ -258,28 +277,6 @@ struct MedicationDraft: Equatable {
         hasCollidingTimes = updated.contains(new)
         updated.insert(new)
         times = updated
-    }
-
-    /// Folds in what the FDA directory knows about a scanned pack.
-    ///
-    /// This overwrites the name and strength the OCR guessed, and it should:
-    /// the directory was reached through a check digit, so it cannot have
-    /// misread a 5 as an S or a 0 as an O. It fills nothing it does not know —
-    /// a combination tablet has no single strength, and the field is left empty
-    /// rather than filled with the first of two.
-    mutating func apply(_ product: DrugDirectory.Entry) {
-        if !product.name.isEmpty { name = product.name }
-        if let strength = product.strength {
-            strengthText = Self.format(strength.amount)
-            strengthUnit = strength.unit
-        }
-        if let detected = product.form { form = detected }
-        // The FDA's own wording, kept when we cannot turn it into a number —
-        // "12 [hp_X]/mL" is meaningless to our strength field and perfectly
-        // meaningful to the person holding the bottle.
-        if product.strength == nil, !product.strengthText.isEmpty {
-            doseDetail = product.strengthText
-        }
     }
 
     /// Folds in what a barcode said. The key and the dates are the barcode's

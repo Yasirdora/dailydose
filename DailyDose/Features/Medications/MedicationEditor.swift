@@ -14,31 +14,51 @@ struct MedicationEditor: View {
     /// It fills no field on this screen: it is stored so the *next* scan of
     /// the same pack finds this medication instead of adding another one.
     var pack: ScannedPack?
-    /// What the local FDA directory knows about that box. Fills the name,
-    /// strength and form — deterministically, from a code with a check digit,
-    /// which is why it outranks anything the camera read off the label.
-    var product: DrugDirectory.Entry?
     var onSaved: (() -> Void)?
 
     @Environment(\.doseStore) private var store
     @Environment(\.dismiss) private var dismiss
 
     @State private var draft = MedicationDraft()
+    /// The one thing this screen can be presenting. There is deliberately no
+    /// second piece of presentation state — see `Route`.
     @State private var route: Route?
-    /// The time currently being tuned on the wheel. The sheet stays open
-    /// until the user confirms — see TimeWheelSheet.
-    @State private var editingTime: TimeOfDay?
-    /// Same grammar for the start date: a big calendar, a green ✓.
-    @State private var isEditingStartDate = false
     @State private var didLoad = false
     /// The essentials stay visible. Everything else is available without
     /// making a first-time setup feel like a medical intake form.
     @State private var showsMoreOptions = false
+    /// Turning on "Track supply" leaves the count blank, which disables Save.
+    /// Rather than let someone hunt for the field that unblocks it, the field
+    /// comes to them.
+    @FocusState private var isSupplyCountFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private enum Route: String, Identifiable {
+    /// Every sheet this screen can show, as one value.
+    ///
+    /// This used to be three separate presentation modifiers on the same view —
+    /// `.sheet(item: $route)`, `.sheet(item: $editingTime)` and
+    /// `.sheet(isPresented: $isEditingStartDate)` — each added by a different
+    /// piece of work that reasonably wanted "just one more sheet". SwiftUI does
+    /// not promise that several presentations attached to one view all
+    /// function; which one wins varies with iOS version and with what was
+    /// presented last, and on device the Form picker simply stopped opening.
+    ///
+    /// One modifier cannot shadow itself. Any new destination becomes a case
+    /// here, not another modifier.
+    private enum Route: Identifiable, Hashable {
         case scanner, frequency, duration, form
-        var id: String { rawValue }
+        /// The time being tuned. The associated value *is* the identity, so
+        /// tapping a different time row re-presents rather than reusing a
+        /// sheet still bound to the previous one.
+        case time(TimeOfDay)
+        case startDate
+
+        var id: String {
+            switch self {
+            case .time(let time): "time-\(time.rawValue)"
+            default: String(describing: self)
+            }
+        }
     }
 
     var body: some View {
@@ -85,6 +105,7 @@ struct MedicationEditor: View {
                 .padding(.bottom, 32)
             }
             .scrollDismissesKeyboard(.interactively)
+            .safeAreaInset(edge: .top, spacing: 0) { blockingReasonBar }
             .navigationTitle(medication == nil
                              ? String(localized: "Add Medication")
                              : String(localized: "Edit Medication"))
@@ -106,9 +127,7 @@ struct MedicationEditor: View {
             .task {
                 guard !didLoad else { return }
                 didLoad = true
-                draft = MedicationDraft(
-                    medication: medication, prefill: prefill, pack: pack, product: product
-                )
+                draft = MedicationDraft(medication: medication, prefill: prefill, pack: pack)
                 // Editing a medication that already has notes or custom
                 // reminders opens with those sections expanded — the screen
                 // should reflect what is configured, not hide it. (Supply
@@ -119,13 +138,19 @@ struct MedicationEditor: View {
                         || MedicationColor.named(medication.colorName) != .default
                 }
             }
+            // The single presentation modifier for this screen. Time and date
+            // pickers are bottom sheets — the presentation Ysr approved. (A
+            // popover was tried and discarded: on iPhone a popover is anchored
+            // to its source view and squashed into the space beside it — it can
+            // never float freely centered. The centered card in older
+            // screenshots was the system DatePicker's private presentation, not
+            // one SwiftUI offers.)
             .sheet(item: $route) { route in
                 switch route {
                 case .scanner:
                     LabelScannerSheet { capture in
                         draft.apply(capture.label)
                         if let pack = capture.pack { draft.apply(pack) }
-                        if let product = capture.product { draft.apply(product) }
                         Haptics.success()
                     }
                 case .frequency:
@@ -134,33 +159,49 @@ struct MedicationEditor: View {
                     DurationPicker(draft: $draft)
                 case .form:
                     FormPicker(selection: $draft.form)
+                case .time(let time):
+                    TimeWheelSheet(time: time) { picked in
+                        draft.replace(time, with: picked)
+                    }
+                    // A content-fitted sheet, the way Apple's own small sheets
+                    // hug what they hold: title bar + wheel + safe area, and
+                    // not a point of dead air more.
+                    .presentationDetents([.height(330)])
+                case .startDate:
+                    DateCalendarSheet(title: String(localized: "Starts"), date: $draft.startDate)
+                        // Fitted, like the time sheet: title bar, six-week
+                        // grid, safe area — nothing more.
+                        .presentationDetents([.height(500)])
                 }
-            }
-            // Time and date pickers are bottom sheets — the presentation
-            // Ysr approved. (A popover was tried and discarded: on iPhone a
-            // popover is anchored to its source view and squashed into the
-            // space beside it — it can never float freely centered. The
-            // centered card in older screenshots was the system
-            // DatePicker's private presentation, not one SwiftUI offers.)
-            .sheet(item: $editingTime) { time in
-                TimeWheelSheet(time: time) { picked in
-                    draft.replace(time, with: picked)
-                }
-                // A content-fitted sheet, the way Apple's own small sheets
-                // hug what they hold: title bar + wheel + safe area, and
-                // not a point of dead air more.
-                .presentationDetents([.height(330)])
-            }
-            .sheet(isPresented: $isEditingStartDate) {
-                DateCalendarSheet(title: String(localized: "Starts"), date: $draft.startDate)
-                    // Fitted, like the time sheet: title bar, six-week
-                    // grid, safe area — nothing more.
-                    .presentationDetents([.height(500)])
             }
         }
     }
 
     // MARK: - Sections
+
+    /// The reason Save is dimmed, pinned directly under the toolbar.
+    ///
+    /// A safe-area inset rather than a row in the scroll view: the whole
+    /// failure this fixes was an explanation that scrolled out of sight while
+    /// the button it explained stayed on screen. This one cannot scroll away.
+    @ViewBuilder
+    private var blockingReasonBar: some View {
+        if let reason = draft.blockingReason {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.circle.fill")
+                Text(reason)
+                Spacer(minLength: 0)
+            }
+            .font(.footnote)
+            .foregroundStyle(Theme.due)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.bar)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(String(localized: "Cannot save yet. \(reason)"))
+        }
+    }
 
     /// The unit selector appears only once there is a number to qualify —
     /// options exactly when they become relevant, never before.
@@ -370,7 +411,7 @@ struct MedicationEditor: View {
             ForEach(Array(draft.times.sorted().enumerated()), id: \.element) { index, time in
                 rowDivider
                 Button {
-                    editingTime = time
+                    route = .time(time)
                     Haptics.select()
                 } label: {
                     HStack {
@@ -395,7 +436,7 @@ struct MedicationEditor: View {
 
             rowDivider
             Button {
-                isEditingStartDate = true
+                route = .startDate
                 Haptics.select()
             } label: {
                 HStack {
@@ -481,6 +522,12 @@ struct MedicationEditor: View {
             editorRow {
                 Toggle(String(localized: "Track supply"), isOn: $draft.tracksSupply.animation(.smooth(duration: 0.25)))
             }
+            .onChange(of: draft.tracksSupply) { _, isOn in
+                // The count is the field that unblocks Save, so it takes the
+                // keyboard the moment tracking is switched on — and gives it
+                // back when tracking is switched off.
+                isSupplyCountFocused = isOn
+            }
             if draft.tracksSupply {
                 rowDivider
                 editorRow {
@@ -490,6 +537,7 @@ struct MedicationEditor: View {
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: 80)
+                        .focused($isSupplyCountFocused)
                 }
                 rowDivider
                 editorRow {
