@@ -102,9 +102,13 @@ struct MissedSweepTests {
         let schedule = Fixture.schedule(
             kind: .daily, times: [Fixture.time(8)], start: Fixture.date(2026, 8, 1)
         )
-        _ = store.add(name: "Metformin", doseDetail: "500 mg", notes: "",
+        let medication = store.add(name: "Metformin", doseDetail: "500 mg", notes: "",
                       colorName: "teal", schedule: schedule,
                       pillsRemaining: nil, refillThreshold: nil)
+        // The test is about the sweep's reach, not about back-dating: the
+        // medication must have *existed* all month, or the adherence floor
+        // (rightly) refuses to fabricate misses from before it was added.
+        medication.createdAt = Fixture.date(2026, 8, 1)
 
         store.recordMissedDoses(now: now)
 

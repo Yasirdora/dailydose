@@ -60,6 +60,25 @@ struct TimeOfDay: Hashable, Comparable, Codable, Sendable, Identifiable {
         return calendar.date(from: components)
     }
 
+    /// The nearest real instant for this wall-clock time, at or after `day`.
+    ///
+    /// A time of day can genuinely not exist: 02:30 on the morning the clocks
+    /// jump forward. `date(on:)` reports that honestly, and callers that need
+    /// *a* date — a picker's initial value — must not fall back to "now",
+    /// which shows a time the user never chose. Stepping to the next day
+    /// always lands on a real one, because a gap lasts a single morning.
+    func nextValidDate(onOrAfter day: Date = .now, calendar: Calendar = .current) -> Date {
+        for offset in 0...2 {
+            guard let candidate = calendar.date(byAdding: .day, value: offset, to: day),
+                  let resolved = date(on: candidate, calendar: calendar)
+            else { continue }
+            // Foundation may roll a nonexistent time forward rather than
+            // returning nil, so verify the clock reading survived the trip.
+            if TimeOfDay(from: resolved, calendar: calendar) == self { return resolved }
+        }
+        return day
+    }
+
     init(from date: Date, calendar: Calendar = .current) {
         let c = calendar.dateComponents([.hour, .minute], from: date)
         self.hour = c.hour ?? 0

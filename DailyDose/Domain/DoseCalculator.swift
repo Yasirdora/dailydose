@@ -177,10 +177,16 @@ enum DoseCalculator {
         var result: [Dose] = []
 
         for medication in medications where medication.isActive {
+            // Never sweep earlier than the day the medication was added: a
+            // back-dated start date is history the app was not present for,
+            // and marking it missed would be an accusation it cannot support.
+            let scanFrom = max(from, medication.adherenceFloor)
+            guard scanFrom < now else { continue }
+
             // Scan to `now` and test each occurrence against its own deadline.
             // A single global cutoff can't express `.untilEndOfDay`, where the
             // deadline depends on which day the dose belongs to.
-            for at in medication.schedule.occurrences(from: from, to: now, calendar: calendar) {
+            for at in medication.schedule.occurrences(from: scanFrom, to: now, calendar: calendar) {
                 guard window.deadline(for: at, calendar: calendar) < now else { continue }
                 guard events.status(medicationID: medication.id, scheduledAt: at) == nil else { continue }
                 result.append(Dose(medicationID: medication.id, scheduledAt: at, state: .overdue))
@@ -313,6 +319,21 @@ struct MedicationSnapshot: Identifiable, Equatable, Sendable {
     /// Physical form — drives the tile glyph and the supply unit language.
     /// Nil means the user never said; the UI shows a neutral glyph, not a lie.
     var form: MedicationForm? = nil
+    /// The day this medication was added. Defaulted to `.distantPast` so a
+    /// caller that doesn't care — a notification plan, a day's dose list —
+    /// is unaffected; only the adherence floor reads it.
+    var createdAt: Date = .distantPast
+
+    /// The earliest instant a dose of this medication may be called *missed*.
+    ///
+    /// A user may legitimately back-date `startDate` to when the prescription
+    /// actually began — that is real clinical information, and the schedule
+    /// keeps it, so "every 2 days" still lands on the right days. But Daily
+    /// Dose cannot have reminded anyone before it knew the medication existed.
+    /// Without this floor, back-dating "Starts" wrote weeks of fabricated
+    /// misses straight into History and the doctor report — the same class of
+    /// invented history that a non-optional `startDate` was introduced to end.
+    var adherenceFloor: Date { max(schedule.startDate, createdAt) }
 
     var isLowOnSupply: Bool {
         guard let pillsRemaining, let refillThreshold else { return false }

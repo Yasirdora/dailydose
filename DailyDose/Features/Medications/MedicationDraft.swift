@@ -19,12 +19,23 @@ struct MedicationDraft: Equatable {
 
     /// Strength as the user types it — "500" — kept as text so the field
     /// never fights the keyboard. Parsed (comma-tolerant) at save.
-    var strengthText = ""
+    var strengthText = "" { didSet { if strengthText != oldValue { didEditDose = true } } }
     var strengthUnit: StrengthUnit?
     /// How much is taken per dose, as typed — "2". The unit is not asked:
     /// it comes from the form (inhaler → puffs), so one choice answers both
     /// questions and they can never disagree.
-    var intakeText = ""
+    var intakeText = "" { didSet { if intakeText != oldValue { didEditDose = true } } }
+
+    /// Whether the user has touched a structured dose field in this session —
+    /// including *clearing* one.
+    ///
+    /// Legacy rows carry their strength as free text. That text is offered to
+    /// the parser on open and kept as a fallback so an entry the parser can't
+    /// read ("half a sachet") isn't silently dropped on the first save. But
+    /// once someone edits the structured fields their intent wins: clearing
+    /// the strength on an older medication used to resurrect the old words on
+    /// save, which made the field impossible to empty.
+    private(set) var didEditDose = false
 
     var kind: ScheduleKind = .daily
     /// A `Set`, so two doses can never occupy the same minute — the condition
@@ -71,6 +82,9 @@ struct MedicationDraft: Equatable {
                     strengthUnit = prefill.strengthUnit
                 }
             }
+            // Seeding is not editing: a scan that filled the field must still
+            // be clearable without the free text coming back.
+            didEditDose = false
             return
         }
         let schedule = medication.schedule
@@ -110,19 +124,43 @@ struct MedicationDraft: Equatable {
         pillsRemaining = medication.pillsRemaining
         refillThreshold = medication.refillThreshold
         importance = medication.importance
+        didEditDose = false
     }
 
     // MARK: - Validation
 
     var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
 
+    /// Every reason a draft can be unsaveable is a named property, not a
+    /// clause buried in `isValid`. The Save button and the footer that
+    /// explains it then read the same source, so the button can never grey
+    /// out with nothing on screen saying why.
     var isValid: Bool {
         !trimmedName.isEmpty
             && !times.isEmpty
             && !hasInvalidDoseNumbers
-            && (kind != .weekdays || !weekdays.isEmpty)
-            && (endDate.map { $0 >= Calendar.current.startOfDay(for: startDate) } ?? true)
+            && !hasEmptyWeekdays
+            && !hasEndBeforeStart
+            && !isMissingSupplyCount
     }
+
+    /// "Specific days" with every day deselected: a schedule that can never
+    /// occur, and the picker happily allows it.
+    var hasEmptyWeekdays: Bool { kind == .weekdays && weekdays.isEmpty }
+
+    /// A course that ends before it starts.
+    var hasEndBeforeStart: Bool {
+        guard let endDate else { return false }
+        return endDate < Calendar.current.startOfDay(for: startDate)
+    }
+
+    /// Tracking supply with the count left blank.
+    ///
+    /// An empty field is `nil`, and `nil` used to persist as `0` — which made
+    /// `0 <= 0` true and fired a refill alert on a box the user had just
+    /// filled. The warning level may stay blank (it means "don't warn me");
+    /// the count cannot, because tracking supply without one is meaningless.
+    var isMissingSupplyCount: Bool { tracksSupply && pillsRemaining == nil }
 
     var refillThresholdExceedsSupply: Bool {
         guard tracksSupply, let threshold = refillThreshold, let remaining = pillsRemaining else { return false }
@@ -132,14 +170,19 @@ struct MedicationDraft: Equatable {
     /// Supply values are only stored when tracking is on, and are clamped to a
     /// sane range so a typo can't put the counter into a state the UI can't
     /// represent.
+    ///
+    /// An empty field resolves to `nil`, never `0`. Coercing it to zero is how
+    /// a brand-new medication arrived already low on supply.
     var resolvedPills: Int? {
-        guard tracksSupply else { return nil }
-        return max(0, min(pillsRemaining ?? 0, 9999))
+        guard tracksSupply, let pillsRemaining else { return nil }
+        return max(0, min(pillsRemaining, 9999))
     }
 
+    /// Blank means "don't warn me" — `isLowOnSupply` needs both values, so a
+    /// nil threshold simply never triggers.
     var resolvedThreshold: Int? {
-        guard tracksSupply else { return nil }
-        return max(0, min(refillThreshold ?? 0, 9999))
+        guard tracksSupply, let refillThreshold else { return nil }
+        return max(0, min(refillThreshold, 9999))
     }
 
     // MARK: - Mutation
@@ -262,9 +305,14 @@ struct MedicationDraft: Equatable {
     /// What gets persisted as the display line: the composed structure when
     /// anything structured exists, else whatever free text was already there
     /// — legacy entries keep their words until the user replaces them.
+    ///
+    /// "Replaces" includes emptying: once a structured field has been edited,
+    /// an empty result is an empty line. Resurrecting the old text made the
+    /// strength impossible to delete.
     var resolvedDoseDetail: String {
         let composed = composedDoseDetail
-        return composed.isEmpty ? doseDetail : composed
+        if !composed.isEmpty { return composed }
+        return didEditDose ? "" : doseDetail
     }
 
     // MARK: - Output

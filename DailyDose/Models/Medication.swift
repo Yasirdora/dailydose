@@ -208,7 +208,8 @@ extension Medication {
             pillsRemaining: pillsRemaining,
             refillThreshold: refillThreshold,
             importance: importance,
-            form: form
+            form: form,
+            createdAt: createdAt
         )
     }
 

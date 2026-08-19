@@ -64,13 +64,15 @@ enum Fixture {
         schedule: DoseSchedule,
         isActive: Bool = true,
         pills: Int? = nil,
-        threshold: Int? = nil
+        threshold: Int? = nil,
+        createdAt: Date = .distantPast
     ) -> MedicationSnapshot {
         MedicationSnapshot(
             id: id, name: name, doseDetail: "500 mg", notes: "",
             colorName: MedicationColor.navy.rawValue,
             isActive: isActive, schedule: schedule,
-            pillsRemaining: pills, refillThreshold: threshold
+            pillsRemaining: pills, refillThreshold: threshold,
+            createdAt: createdAt
         )
     }
 }

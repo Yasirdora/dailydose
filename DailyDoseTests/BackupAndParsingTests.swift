@@ -269,6 +269,32 @@ struct LabelScanParserTests {
         #expect(LabelScanParser.parse("ASPIRIN").strengthAmount == nil)
         #expect(LabelScanParser.parse("10gauge needle").strengthAmount == nil)
     }
+
+    /// Auto-capture waits for a fragment *containing* a strength, and on a
+    /// real box the strength is usually set on its own line — so a bare
+    /// "500 MG" is the most likely scan there is. It used to arrive as a
+    /// medication named "500 Mg", which saves cleanly and is wrong forever.
+    @Test("A fragment that is only a strength yields no name, not a name of the strength")
+    func strengthAloneIsNotAName() {
+        for fragment in ["500 MG", "500mg", "1000 IU", "60 ml", "0,5 %"] {
+            let result = LabelScanParser.parse(fragment)
+            #expect(result.name.isEmpty, "\(fragment) named the medication after its own dose")
+            #expect(result.strengthAmount != nil, "\(fragment) still carries its strength")
+            #expect(!result.isEmpty, "A strength alone is still worth pre-filling")
+        }
+    }
+
+    /// The words a label prints *around* a strength are not a name either.
+    @Test("Label boilerplate never becomes the medication name")
+    func boilerplateIsNotAName() {
+        #expect(LabelScanParser.parse("EACH TABLET CONTAINS 500 MG").name.isEmpty)
+        #expect(LabelScanParser.parse("Net 100 g").name.isEmpty)
+        #expect(LabelScanParser.parse("Contents: 250 mg").name.isEmpty)
+        // …but a real name sitting in front of the strength still survives.
+        #expect(LabelScanParser.parse("METFORMIN HCL 500 MG TABLET").name == "Metformin HCL")
+        #expect(LabelScanParser.parse("TIMOLOL 0,5 % EYE DROPS").name == "Timolol")
+        #expect(LabelScanParser.parse("ASPIRIN").name == "Aspirin")
+    }
 }
 
 @Suite("Medication draft")
@@ -393,10 +419,16 @@ struct MedicationDraftTests {
         draft.strengthUnit = nil
         #expect(draft.composedDoseDetail == "100")
 
-        // Nothing structured → the legacy free text survives untouched.
+        // Nothing structured and never touched → the legacy free text
+        // survives untouched.
+        var legacy = MedicationDraft()
+        legacy.doseDetail = "half a tablet with food"
+        #expect(legacy.resolvedDoseDetail == "half a tablet with food")
+
+        // …but once a structured field has been edited, empty means empty —
+        // clearing the strength must not resurrect the old words.
         draft.strengthText = ""
-        draft.doseDetail = "half a tablet with food"
-        #expect(draft.resolvedDoseDetail == "half a tablet with food")
+        #expect(draft.resolvedDoseDetail == "")
     }
 
     @Test("A dose number that doesn't parse blocks the save, honestly")
@@ -420,6 +452,96 @@ struct MedicationDraftTests {
         #expect(draft.strengthUnit == .mcg)
         #expect(draft.form == .inhaler)
         #expect(draft.composedDoseDetail == "100 mcg")
+    }
+}
+
+@Suite("Medication form safety")
+struct MedicationFormSafetyTests {
+
+    private func draft(_ configure: (inout MedicationDraft) -> Void) -> MedicationDraft {
+        var draft = MedicationDraft()
+        draft.name = "Metformin"
+        configure(&draft)
+        return draft
+    }
+
+    /// Turning tracking on and typing nothing used to persist 0 — and
+    /// `0 <= 0` made a brand-new medication low on supply, so a refill alert
+    /// fired for a box the user had just filled.
+    @Test("Supply tracking with a blank count blocks the save rather than storing zero")
+    func blankSupplyCountIsNotZero() {
+        let empty = draft { $0.tracksSupply = true }
+        #expect(empty.isMissingSupplyCount)
+        #expect(!empty.isValid, "Save must not commit a count nobody entered")
+        #expect(empty.resolvedPills == nil, "Empty is empty — never 0")
+
+        // A blank *warning level* is a legitimate "don't warn me".
+        let counted = draft { $0.tracksSupply = true; $0.pillsRemaining = 30 }
+        #expect(!counted.isMissingSupplyCount)
+        #expect(counted.isValid)
+        #expect(counted.resolvedPills == 30)
+        #expect(counted.resolvedThreshold == nil)
+
+        // And tracking off stores neither, whatever is left in the fields.
+        let off = draft { $0.tracksSupply = false; $0.pillsRemaining = 30; $0.refillThreshold = 5 }
+        #expect(off.isValid)
+        #expect(off.resolvedPills == nil)
+        #expect(off.resolvedThreshold == nil)
+    }
+
+    /// Both states greyed the Save button out with nothing on screen saying
+    /// why. They are named now, so the footer and the button read the same
+    /// source.
+    @Test("Every invalid state is a named reason, not an anonymous disabled button")
+    func invalidStatesAreNamed() {
+        let noDays = draft { $0.setKind(.weekdays); $0.weekdays = [] }
+        #expect(noDays.hasEmptyWeekdays)
+        #expect(!noDays.isValid)
+
+        let backwards = draft {
+            $0.startDate = Fixture.date(2026, 8, 19)
+            $0.endDate = Fixture.date(2026, 8, 12)
+        }
+        #expect(backwards.hasEndBeforeStart)
+        #expect(!backwards.isValid)
+
+        // An end date *on* the start day is a one-day course, not an error.
+        let sameDay = draft {
+            $0.startDate = Fixture.date(2026, 8, 19)
+            $0.endDate = Fixture.date(2026, 8, 19)
+        }
+        #expect(!sameDay.hasEndBeforeStart)
+        #expect(sameDay.isValid)
+    }
+
+    /// Legacy rows carry their strength as free text, and the editor keeps it
+    /// as a fallback so an entry the parser can't read isn't dropped. But
+    /// clearing the field used to resurrect the old words on save, which made
+    /// the strength impossible to delete.
+    @Test("Clearing the strength on a legacy entry actually clears it")
+    func clearedStrengthStaysCleared() {
+        var untouched = MedicationDraft()
+        untouched.name = "Metformin"
+        untouched.doseDetail = "half a sachet"
+        #expect(untouched.resolvedDoseDetail == "half a sachet",
+                "Text the parser can't read is kept until the user replaces it")
+
+        var cleared = untouched
+        cleared.strengthText = "500"
+        cleared.strengthUnit = .mg
+        #expect(cleared.resolvedDoseDetail == "500 mg")
+
+        cleared.strengthText = ""
+        #expect(cleared.resolvedDoseDetail.isEmpty,
+                "Deleting the strength must delete it, not restore the old words")
+    }
+
+    /// The value that was validated is the value that gets stored.
+    @Test("A name is validated and saved in the same trimmed form")
+    func nameIsTrimmedConsistently() {
+        let padded = draft { $0.name = "  Metformin HCL  " }
+        #expect(padded.isValid)
+        #expect(padded.trimmedName == "Metformin HCL")
     }
 }
 

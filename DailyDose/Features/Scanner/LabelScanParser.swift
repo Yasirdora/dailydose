@@ -43,6 +43,33 @@ enum LabelScanParser {
         pattern: formPattern, options: .caseInsensitive
     )
 
+    /// Words a label prints around a strength that are not a medication's
+    /// name: "EACH TABLET CONTAINS", "NET WT", "PER DOSE".
+    ///
+    /// A fragment made only of these — or of nothing at all, which is what a
+    /// standalone "500 MG" line leaves behind — must not become the name.
+    /// Auto-capture waits for a fragment containing a strength, and on a real
+    /// box the strength is usually set on its own line, so this is the *most
+    /// likely* scan of all. An empty name the user fills is honest; a name
+    /// pre-filled with "500 Mg" is a trap they save without re-reading.
+    private static let nameBoilerplate: Set<String> = [
+        "each", "every", "per", "contains", "containing", "content", "contents",
+        "dose", "doses", "dosage", "net", "total", "strength", "of", "wt",
+        "weight", "tablet", "tablets", "capsule", "capsules", "ml", "mg",
+    ]
+
+    private static func isBoilerplate(_ text: String) -> Bool {
+        let words = text.lowercased()
+            .split(whereSeparator: { !$0.isLetter })
+            .map(String.init)
+        return words.isEmpty || words.allSatisfy(nameBoilerplate.contains)
+    }
+
+    /// The name, or nothing. Never the strength wearing the name's clothes.
+    private static func resolvedName(_ candidate: String) -> String {
+        isBoilerplate(candidate) ? "" : prettifyName(candidate)
+    }
+
     static func containsStrength(_ text: String) -> Bool {
         guard let strengthRegex else { return false }
         let flat = text.singleLine
@@ -63,7 +90,7 @@ enum LabelScanParser {
               let match = strengthRegex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range, in: text)
         else {
-            return Result(name: prettifyName(text), strength: "", strengthAmount: nil, strengthUnit: nil, detectedForm: detectedForm)
+            return Result(name: resolvedName(text), strength: "", strengthAmount: nil, strengthUnit: nil, detectedForm: detectedForm)
         }
 
         var strength = String(text[range])
@@ -90,7 +117,9 @@ enum LabelScanParser {
             in: CharacterSet.whitespaces.union(.punctuationCharacters)
         )
         return Result(
-            name: prettifyName(trimmedName.isEmpty ? text : trimmedName),
+            // Only the words *before* the strength are ever a candidate. The
+            // old fallback to the whole fragment is what produced "500 Mg".
+            name: resolvedName(trimmedName),
             strength: normalizeStrength(strength),
             strengthAmount: strengthAmount,
             strengthUnit: strengthUnit,
