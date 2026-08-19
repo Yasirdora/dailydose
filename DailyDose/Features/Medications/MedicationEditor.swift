@@ -1037,35 +1037,33 @@ private struct TimeWheelSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                DatePicker(
-                    String(localized: "Time"),
-                    selection: $picked,
-                    displayedComponents: .hourAndMinute
-                )
-                .datePickerStyle(.wheel)
-                .labelsHidden()
-
-                Button {
-                    onDone(TimeOfDay(from: picked))
-                    Haptics.success()
-                    dismiss()
-                } label: {
-                    Image(systemName: "checkmark")
-                        .font(.title2.weight(.bold))
-                        .frame(maxWidth: .infinity, minHeight: 56)
-                        .contentShape(.rect)
-                }
-                .prominentButton()
-                .tint(Theme.taken)
-                .padding(.horizontal, 24)
-                .accessibilityLabel(String(localized: "Confirm time"))
-            }
-            .padding(.top, 12)
+            DatePicker(
+                String(localized: "Time"),
+                selection: $picked,
+                displayedComponents: .hourAndMinute
+            )
+            .datePickerStyle(.wheel)
+            .labelsHidden()
+            .frame(maxHeight: .infinity)
             .navigationTitle(String(localized: "Choose time"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                // The same grammar as every other sheet in the app: ✕ to
+                // cancel on the left, green glass ✓ to confirm on the right.
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        onDone(TimeOfDay(from: picked))
+                        Haptics.success()
+                        dismiss()
+                    } label: {
+                        Image(systemName: "checkmark")
+                            .font(.body.weight(.bold))
+                    }
+                    .prominentButton()
+                    .tint(Theme.taken)
+                    .accessibilityLabel(String(localized: "Confirm time"))
+                }
             }
         }
         .onAppear {
