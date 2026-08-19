@@ -26,6 +26,7 @@ struct MedicationDetailView: View {
             if medication.needsSchedule { needsScheduleSection }
             if let nextDose, medication.isActive { nextDoseSection(nextDose) }
             scheduleSection
+            if medication.expiryDate != nil { packSection }
             if medication.pillsRemaining != nil { supplySection }
             adherenceSection
             remindersSection
@@ -139,6 +140,36 @@ struct MedicationDetailView: View {
                     }
                 } icon: {
                     Image(systemName: "clock")
+                }
+            }
+        }
+    }
+
+    /// What the box itself said, straight out of its barcode.
+    ///
+    /// Shown only when a scan provided it — a medication typed in by hand has
+    /// no expiry date, and an empty row claiming otherwise would be the app
+    /// inventing a fact about someone's medicine. Expired is red and says so,
+    /// because a date on its own is something people read past.
+    @ViewBuilder
+    private var packSection: some View {
+        if let expiry = medication.expiryDate {
+            Section(String(localized: "Pack")) {
+                LabeledContent {
+                    Text(expiry.formatted(.dateTime.day().month(.abbreviated).year()))
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(medication.isExpired() == true ? Theme.missed : .primary)
+                } label: {
+                    Label(String(localized: "Expires"), systemImage: "calendar.badge.clock")
+                }
+
+                if medication.isExpired() == true {
+                    StatusChip(
+                        text: String(localized: "This pack has expired"),
+                        color: Theme.missed,
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 }
             }
         }
@@ -291,7 +322,13 @@ struct MedicationDetailView: View {
 
 // MARK: - Refill sheet
 
-private struct RefillSheet: View {
+/// "How many are in the new box?" — reached from the detail screen, and from
+/// the scanner when a barcode matches a medication the user already has.
+struct RefillSheet: View {
+    /// Shown as the subtitle when the sheet was reached by scanning, where the
+    /// user has not just been looking at the medication's own screen and needs
+    /// to be told which one this is about. Empty from the detail screen.
+    var medicationName: String = ""
     let onAdd: (Int) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -309,6 +346,10 @@ private struct RefillSheet: View {
                     Stepper(value: $amount, in: 1...500) {
                         Text(String(localized: "Add \(amount) doses"))
                             .contentTransition(.numericText())
+                    }
+                } header: {
+                    if !medicationName.isEmpty {
+                        Text(String(localized: "Scanned \(medicationName)"))
                     }
                 } footer: {
                     Text(String(localized: "Count what's in the new pack and add it to your supply."))

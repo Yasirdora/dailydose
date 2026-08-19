@@ -5,14 +5,19 @@ import SwiftUI
 /// living inside a rounded card that IS the scan window, one brief line of
 /// instruction, then shutter and manual entry at the bottom.
 ///
-/// Capture happens three ways, in descending order of magic:
+/// Capture happens four ways, in descending order of magic:
 ///
-/// 1. **Auto-capture** — a readable strength ("500 mg") held steady for a
+/// 1. **A barcode** — fires the instant one parses. No stability window: a
+///    barcode carries its own check digit, so it is either right or it is not
+///    read at all, and there is nothing for a second of waiting to confirm.
+///    If the code matches a pack the user has scanned before, this becomes a
+///    refill rather than a new medication.
+/// 2. **Auto-capture** — a readable strength ("500 mg") held steady for a
 ///    second fires on its own. Pointing is all the teaching anyone needs.
-/// 2. **The shutter** — the explicit path, and the affordance that tells a
+/// 3. **The shutter** — the explicit path, and the affordance that tells a
 ///    first-time user this screen is for scanning. Tap-to-pick alone failed
 ///    that test: nobody discovered it, because nothing on screen says "tap".
-/// 3. **Tapping a highlighted fragment** — still there, just no longer the
+/// 4. **Tapping a highlighted fragment** — still there, just no longer the
 ///    only way.
 ///
 /// Only what the card shows can be scanned — the region of interest is the
@@ -25,9 +30,14 @@ struct ScanTabView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.doseStore) private var store
     @State private var authorization = CameraAuthorization()
     @State private var recognized = RecognizedTextStore()
-    @State private var scanned: LabelScanParser.Result?
+    @State private var scanned: ScanCapture?
+    /// A medication this barcode already belongs to. Set instead of `scanned`,
+    /// because the right offer for a box the user has bought before is "top up
+    /// your supply", not "add a second Metformin".
+    @State private var matched: Medication?
     @State private var isEnteringManually = false
     @State private var autoCapture: Task<Void, Never>?
     @State private var toast: Toast?
@@ -70,12 +80,19 @@ struct ScanTabView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { authorization.refresh() }
         }
+        .onChange(of: recognized.pack) { _, pack in
+            // No stability window, unlike the OCR path below. A barcode either
+            // satisfies its own check digit or was never read, so a second of
+            // "hold steady" would confirm nothing that is not already certain.
+            guard let pack, !isPresenting else { return }
+            capture(pack)
+        }
         .onChange(of: recognized.strengthCandidate) { _, candidate in
             // Any change — appearing, disappearing, re-reading — restarts the
             // stability window. OCR flickers frame to frame; a capture taken
             // from a flicker fills the form with garbage.
             autoCapture?.cancel()
-            guard candidate != nil, scanned == nil, !isEnteringManually else { return }
+            guard candidate != nil, !isPresenting else { return }
             autoCapture = Task {
                 try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled, let current = recognized.strengthCandidate else { return }
@@ -84,12 +101,28 @@ struct ScanTabView: View {
             }
         }
         .onDisappear { autoCapture?.cancel() }
-        .sheet(item: $scanned) { result in
-            MedicationEditor(medication: nil, prefill: result, onSaved: onFinish)
+        .sheet(item: $scanned) { capture in
+            MedicationEditor(
+                medication: nil, prefill: capture.label, pack: capture.pack, onSaved: onFinish
+            )
+        }
+        .sheet(item: $matched) { medication in
+            RefillSheet(medicationName: medication.displayName) { amount in
+                store?.addSupply(amount, to: medication)
+                Haptics.success()
+                onFinish?()
+            }
         }
         .sheet(isPresented: $isEnteringManually) {
             MedicationEditor(medication: nil, onSaved: onFinish)
         }
+    }
+
+    /// Whether something is already on screen in front of the camera. Every
+    /// capture path checks it, so two triggers firing in the same frame — a
+    /// barcode and a steady strength — cannot stack two sheets.
+    private var isPresenting: Bool {
+        scanned != nil || matched != nil || isEnteringManually
     }
 
     // MARK: - Header
@@ -166,7 +199,7 @@ struct ScanTabView: View {
                 .font(.title3.weight(.bold))
             Text(recognized.strengthCandidate != nil
                  ? String(localized: "Hold steady…")
-                 : String(localized: "Position the label inside the frame."))
+                 : String(localized: "Point at the label or the barcode."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -208,6 +241,12 @@ struct ScanTabView: View {
     // MARK: - Capture
 
     private func capture() {
+        // The shutter prefers the barcode too: it is the only reading on this
+        // screen that carries proof it was read correctly.
+        if let pack = recognized.pack {
+            capture(pack)
+            return
+        }
         guard let candidate = recognized.bestCandidate else {
             showEmptyHint()
             return
@@ -217,13 +256,35 @@ struct ScanTabView: View {
         present(candidate)
     }
 
+    /// A pack the camera has identified.
+    ///
+    /// A box the user has scanned before does not become a second medication —
+    /// it becomes more of the one they already have. That is the whole payoff
+    /// of storing the key: name it once, and every refill after that is a
+    /// two-second scan with no typing and no database anywhere on earth.
+    private func capture(_ pack: ScannedPack) {
+        autoCapture?.cancel()
+        if let existing = store?.medication(productKey: pack.key) {
+            Haptics.success()
+            matched = existing
+            return
+        }
+        Haptics.success()
+        // Whatever the camera can also read off the box comes along: the
+        // barcode knows the identity and the dates, the label knows the name.
+        scanned = ScanCapture(
+            label: recognized.bestCandidate.map(LabelScanParser.parse) ?? .empty,
+            pack: pack
+        )
+    }
+
     private func present(_ transcript: String) {
         let result = LabelScanParser.parse(transcript)
         guard !result.isEmpty else {
             showEmptyHint()
             return
         }
-        scanned = result
+        scanned = ScanCapture(label: result, pack: nil)
     }
 
     private func showEmptyHint() {
@@ -278,7 +339,10 @@ private struct GlassCircle: ViewModifier {
 
 /// The scanner presented as a sheet from the medication editor.
 struct LabelScannerSheet: View {
-    let onPick: (LabelScanParser.Result) -> Void
+    /// Both halves of a capture: what the label said, and what the barcode did.
+    /// The barcode half is nil on a box that carries no code we can read, which
+    /// is normal — a UK pack may carry none at all.
+    let onPick: (LabelScanParser.Result, ScannedPack?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -294,10 +358,18 @@ struct LabelScannerSheet: View {
                     LabelScannerView(store: recognized) { transcript in
                         let result = LabelScanParser.parse(transcript)
                         guard !result.isEmpty else { return }
-                        onPick(result)
+                        onPick(result, recognized.pack)
                         dismiss()
                     }
                     .ignoresSafeArea(edges: .bottom)
+                    // A barcode needs no tap and no steady hand: it is read or
+                    // it is not, so the moment one parses this sheet is done.
+                    .onChange(of: recognized.pack) { _, pack in
+                        guard let pack else { return }
+                        Haptics.success()
+                        onPick(recognized.bestCandidate.map(LabelScanParser.parse) ?? .empty, pack)
+                        dismiss()
+                    }
                 } else {
                     CameraUnavailableView(state: authorization.state) {
                         Task { await authorization.request() }
@@ -317,6 +389,20 @@ struct LabelScannerSheet: View {
     }
 }
 
-extension LabelScanParser.Result: Identifiable {
-    public var id: String { "\(name)|\(strength)" }
+/// One capture, from both engines at once.
+///
+/// The two halves answer different questions and neither replaces the other:
+/// the barcode is certain about *which product* and *when it expires*, the
+/// label is the only thing that knows what the medicine is called. Either half
+/// may be empty — a UK box with no DataMatrix, a code with no readable text
+/// beside it — and the editor fills in what it was given.
+struct ScanCapture: Identifiable, Equatable {
+    var label: LabelScanParser.Result
+    var pack: ScannedPack?
+
+    /// Identity for `.sheet(item:)`. The barcode wins when there is one: it is
+    /// stable frame to frame where OCR text is not.
+    var id: String {
+        pack?.key.rawValue ?? "\(label.name)|\(label.strength)"
+    }
 }

@@ -45,6 +45,23 @@ final class Medication {
     /// so one choice answers both questions and they can never disagree.
     var intakeAmount: Double?
 
+    // MARK: The pack it came in (V7)
+
+    /// The barcode identity of the box, as `ProductKey.rawValue`.
+    ///
+    /// Empty means "never scanned", which is every medication anyone has added
+    /// by hand. Read through `productKey`, which re-validates the check digit
+    /// rather than trusting the column — a raw value from a newer build or a
+    /// hand-edited store must read as "unknown", never crash a scan.
+    var productKeyRaw: String = ""
+
+    /// When the scanned pack expires, straight out of its barcode.
+    ///
+    /// A property of the box rather than the medicine, so it is replaced
+    /// wholesale each time a new pack is scanned and is nil for everything
+    /// entered by hand.
+    var expiryDate: Date?
+
     var isActive: Bool
     var createdAt: Date
 
@@ -107,6 +124,8 @@ final class Medication {
         strengthAmount: Double? = nil,
         strengthUnit: StrengthUnit? = nil,
         intakeAmount: Double? = nil,
+        productKey: ProductKey? = nil,
+        expiryDate: Date? = nil,
         isActive: Bool = true,
         createdAt: Date = .now
     ) {
@@ -119,6 +138,8 @@ final class Medication {
         self.strengthAmount = strengthAmount
         self.strengthUnitRaw = strengthUnit?.rawValue ?? ""
         self.intakeAmount = intakeAmount
+        self.productKeyRaw = productKey?.rawValue ?? ""
+        self.expiryDate = expiryDate
         self.isActive = isActive
         self.createdAt = createdAt
         self.pillsRemaining = pillsRemaining
@@ -193,6 +214,26 @@ extension Medication {
     var strengthUnit: StrengthUnit? {
         get { strengthUnitRaw.isEmpty ? nil : StrengthUnit.named(strengthUnitRaw) }
         set { strengthUnitRaw = newValue?.rawValue ?? "" }
+    }
+
+    /// The scanned barcode identity, or nil — same contract again.
+    ///
+    /// The getter re-runs the check digit on the way out of the store. That is
+    /// not paranoia about our own writes: it is what makes a raw value written
+    /// by a future build, or restored from a damaged file, read as "no key"
+    /// instead of matching the wrong medication to a box.
+    var productKey: ProductKey? {
+        get { productKeyRaw.isEmpty ? nil : ProductKey(rawValue: productKeyRaw) }
+        set { productKeyRaw = newValue?.rawValue ?? "" }
+    }
+
+    /// Whether the scanned pack's expiry date has passed, on a given day.
+    /// Nil when nothing was ever scanned — an unknown expiry is not an
+    /// unexpired one, and saying so in the type stops a screen from claiming
+    /// a hand-entered medication is fine when nobody has any idea.
+    func isExpired(on day: Date = .now, calendar: Calendar = .current) -> Bool? {
+        guard let expiryDate else { return nil }
+        return calendar.startOfDay(for: expiryDate) < calendar.startOfDay(for: day)
     }
 
     /// The read-only value passed into the domain layer.

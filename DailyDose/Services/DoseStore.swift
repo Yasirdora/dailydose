@@ -111,6 +111,21 @@ final class DoseStore {
         return try? context.fetch(descriptor).first
     }
 
+    /// The medication a scanned pack belongs to, if the user has already named
+    /// one for this barcode.
+    ///
+    /// Matched on the stored raw string rather than on a decoded `ProductKey`,
+    /// so the whole thing stays one indexed predicate instead of decoding every
+    /// row. `ProductKey.rawValue` is canonical — a GTIN is always zero-padded
+    /// to fourteen digits — so two scans of the same box always produce the
+    /// same string.
+    func medication(productKey: ProductKey) -> Medication? {
+        let raw = productKey.rawValue
+        var descriptor = FetchDescriptor<Medication>(predicate: #Predicate { $0.productKeyRaw == raw })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
+    }
+
     // MARK: - Logging a dose
 
     /// Records (or corrects) the outcome of a dose.
@@ -232,7 +247,9 @@ final class DoseStore {
         form: MedicationForm? = nil,
         strengthAmount: Double? = nil,
         strengthUnit: StrengthUnit? = nil,
-        intakeAmount: Double? = nil
+        intakeAmount: Double? = nil,
+        productKey: ProductKey? = nil,
+        expiryDate: Date? = nil
     ) -> Medication {
         let medication = Medication(
             name: name.singleLine,
@@ -246,7 +263,9 @@ final class DoseStore {
             form: form,
             strengthAmount: strengthAmount,
             strengthUnit: strengthUnit,
-            intakeAmount: intakeAmount
+            intakeAmount: intakeAmount,
+            productKey: productKey,
+            expiryDate: expiryDate
         )
         context.insert(medication)
         persist()
@@ -267,7 +286,9 @@ final class DoseStore {
         form: MedicationForm? = nil,
         strengthAmount: Double? = nil,
         strengthUnit: StrengthUnit? = nil,
-        intakeAmount: Double? = nil
+        intakeAmount: Double? = nil,
+        productKey: ProductKey? = nil,
+        expiryDate: Date? = nil
     ) {
         medication.name = name.singleLine
         medication.doseDetail = doseDetail.singleLine
@@ -277,6 +298,8 @@ final class DoseStore {
         medication.strengthAmount = strengthAmount
         medication.strengthUnit = strengthUnit
         medication.intakeAmount = intakeAmount
+        medication.productKey = productKey
+        medication.expiryDate = expiryDate
         medication.schedule = schedule
         medication.pillsRemaining = pillsRemaining
         medication.refillThreshold = refillThreshold

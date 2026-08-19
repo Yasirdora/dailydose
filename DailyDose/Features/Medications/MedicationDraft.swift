@@ -61,13 +61,26 @@ struct MedicationDraft: Equatable {
     /// common case needs no decision from the user.
     var importance: MedicationImportance = .standard
 
+    // MARK: The pack it came in
+
+    /// The scanned barcode identity. Carried, never edited: there is no field
+    /// for it and no reason for one — it exists so the *next* box the user
+    /// scans finds this medication instead of creating a second copy of it.
+    /// Loaded from the medication on open so an ordinary edit cannot erase it.
+    var productKey: ProductKey?
+
+    /// The scanned pack's expiry date, on the same terms.
+    var expiryDate: Date?
+
     /// Set when an edit collapsed two times into one, so the UI can explain
     /// why a picker appeared to snap.
     private(set) var hasCollidingTimes = false
 
     init() {}
 
-    init(medication: Medication?, prefill: LabelScanParser.Result? = nil) {
+    init(medication: Medication?, prefill: LabelScanParser.Result? = nil, pack: ScannedPack? = nil) {
+        productKey = pack?.key
+        expiryDate = pack?.expiry?.day
         guard let medication else {
             if let prefill {
                 name = prefill.name
@@ -88,6 +101,10 @@ struct MedicationDraft: Equatable {
             return
         }
         let schedule = medication.schedule
+        // A scan of a new box replaces what the old one said; opening the
+        // editor to change a dose time does not.
+        productKey = pack?.key ?? medication.productKey
+        expiryDate = pack?.expiry?.day ?? medication.expiryDate
         name = medication.displayName
         doseDetail = medication.doseDetail
         notes = medication.notes
@@ -228,6 +245,14 @@ struct MedicationDraft: Equatable {
         hasCollidingTimes = updated.contains(new)
         updated.insert(new)
         times = updated
+    }
+
+    /// Folds in what a barcode said. The key and the dates are the barcode's
+    /// to state — nothing on the label can contradict them, and nothing the
+    /// user typed is overwritten by them.
+    mutating func apply(_ pack: ScannedPack) {
+        productKey = pack.key
+        if let expiry = pack.expiry { expiryDate = expiry.day }
     }
 
     mutating func apply(_ result: LabelScanParser.Result) {

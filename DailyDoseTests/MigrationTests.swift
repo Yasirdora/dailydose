@@ -44,7 +44,7 @@ struct MigrationTests {
         // The plan chains V1→V2 (custom), V2→V3 and V3→V4 (both lightweight);
         // the app boots with the latest schema, so that is what the store is
         // opened with here.
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV6.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV7.self)
         let container = try ModelContainer(
             for: currentSchema,
             migrationPlan: DailyDoseMigrationPlan.self,
@@ -123,7 +123,7 @@ struct MigrationTests {
         try v2Context.save()
 
         // --- Reopen through the migration plan, as the updated app does. ---
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV6.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV7.self)
         let container = try ModelContainer(
             for: currentSchema,
             migrationPlan: DailyDoseMigrationPlan.self,
@@ -180,7 +180,7 @@ struct MigrationTests {
         ))
         try v2Context.save()
 
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV6.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV7.self)
         for pass in 1...2 {
             let container = try ModelContainer(
                 for: currentSchema,
@@ -220,7 +220,7 @@ struct MigrationTests {
         ))
         try v3Context.save()
 
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV6.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV7.self)
         let container = try ModelContainer(
             for: currentSchema,
             migrationPlan: DailyDoseMigrationPlan.self,
@@ -263,7 +263,7 @@ struct MigrationTests {
         ))
         try v4Context.save()
 
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV6.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV7.self)
         let container = try ModelContainer(
             for: currentSchema,
             migrationPlan: DailyDoseMigrationPlan.self,
@@ -315,7 +315,7 @@ struct MigrationTests {
         ))
         try v5Context.save()
 
-        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV6.self)
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV7.self)
         let container = try ModelContainer(
             for: currentSchema,
             migrationPlan: DailyDoseMigrationPlan.self,

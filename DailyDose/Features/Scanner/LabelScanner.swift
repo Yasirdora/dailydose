@@ -1,5 +1,6 @@
 import SwiftUI
 import VisionKit
+import Vision
 import AVFoundation
 
 /// Live on-device text scanning over the camera, in the style of Apple Health's
@@ -13,9 +14,28 @@ struct LabelScannerView: UIViewControllerRepresentable {
         DataScannerViewController.isSupported && DataScannerViewController.isAvailable
     }
 
+    /// What a medicine pack is printed in, anywhere in the world.
+    ///
+    /// `.dataMatrix` is the one that matters: it is what EU prescription packs
+    /// carry under the Falsified Medicines Directive and what US packs carry
+    /// under DSCSA, and it is the only one that holds an expiry date. The
+    /// linear symbologies are here because an over-the-counter box, or a UK
+    /// pack since the FMD stopped applying, may carry nothing else — and a
+    /// GTIN with no expiry still makes a refill scan work.
+    static let symbologies: [VNBarcodeSymbology] = [
+        .dataMatrix,
+        .ean13, .ean8, .upce,
+        .code39, .code128,
+        .gs1DataBar, .gs1DataBarExpanded, .gs1DataBarLimited,
+    ]
+
     func makeUIViewController(context: Context) -> ScannerContainerViewController {
         let scanner = DataScannerViewController(
-            recognizedDataTypes: [.text()],
+            // Text *and* barcodes, in one session: `recognizedDataTypes` is a
+            // set, and the two run together rather than in competition. The
+            // camera gives us the medicine's name; the barcode gives us its
+            // identity and its expiry date, which no amount of OCR can.
+            recognizedDataTypes: [.text(), .barcode(symbologies: Self.symbologies)],
             qualityLevel: .balanced,
             recognizesMultipleItems: true,
             isHighFrameRateTrackingEnabled: false,
@@ -71,19 +91,31 @@ struct LabelScannerView: UIViewControllerRepresentable {
     }
 }
 
-/// The text fragments currently in frame.
+/// What the camera can currently see: text fragments, and the pack a barcode
+/// in frame decoded to.
 ///
-/// `@Observable` so the frame's "readable" glow and the auto-capture timer
+/// `@Observable` so the frame's "readable" glow and the auto-capture trigger
 /// track what the camera can actually see, updated on every recognized-item
 /// callback.
+///
+/// This is the boundary between VisionKit and the pure domain layer: raw bytes
+/// come in here and a `ScannedPack` goes out. Nothing above it touches Vision,
+/// and nothing below it knows a camera exists.
 @MainActor
 @Observable
 final class RecognizedTextStore {
     private(set) var transcripts: [String] = []
 
+    /// The pack a barcode in frame decoded to, if one did.
+    ///
+    /// A barcode carries its own check digit, so this is either right or nil —
+    /// there is no "probably". That is what lets it fire capture immediately
+    /// where OCR has to be held steady for a second first.
+    private(set) var pack: ScannedPack?
+
     /// Any text at all in frame — decides whether a background tap deserves
     /// the "nothing here" nudge.
-    var hasCandidate: Bool { !transcripts.isEmpty }
+    var hasCandidate: Bool { !transcripts.isEmpty || pack != nil }
 
     /// A fragment containing a strength ("500 mg"): the signal that the label
     /// is genuinely readable, not just noisy. Auto-capture waits for this.
@@ -98,10 +130,27 @@ final class RecognizedTextStore {
     }
 
     func update(with items: [RecognizedItem]) {
-        transcripts = items.compactMap { item in
-            guard case .text(let text) = item else { return nil }
-            return text.transcript
+        var transcripts: [String] = []
+        var pack: ScannedPack?
+
+        for item in items {
+            switch item {
+            case .text(let text):
+                transcripts.append(text.transcript)
+            case .barcode(let barcode):
+                // First readable code wins. Two medicine barcodes in one frame
+                // means the camera is looking at two boxes, and picking one is
+                // exactly as wrong as picking the other — but the user is
+                // holding *something* up, and the guard is the confirmation
+                // screen they land on either way.
+                if pack == nil, let scanned = Self.interpret(barcode) { pack = scanned }
+            @unknown default:
+                continue
+            }
         }
+
+        self.transcripts = transcripts
+        self.pack = pack
     }
 
     /// Called when scanning stops. A camera that isn't running must not hold
@@ -109,6 +158,49 @@ final class RecognizedTextStore {
     /// the viewfinder isn't even on screen.
     func clear() {
         transcripts = []
+        pack = nil
+    }
+
+    // MARK: - VisionKit bridging
+
+    private static func interpret(_ barcode: RecognizedItem.Barcode) -> ScannedPack? {
+        let observation = barcode.observation
+
+        // `payloadData` before `payloadStringValue`, always. The string form is
+        // decoded text, and the `GS` (0x1D) bytes that separate a GS1 element
+        // string's variable-length fields do not reliably survive that trip —
+        // losing one silently merges a batch number with whatever followed it.
+        let bytes: [UInt8]
+        if let data = observation.payloadData, !data.isEmpty {
+            bytes = Array(data)
+        } else if let text = observation.payloadStringValue {
+            bytes = Array(text.utf8)
+        } else {
+            return nil
+        }
+
+        return BarcodeInterpreter.interpret(
+            BarcodePayload(bytes: bytes, symbology: .init(observation.symbology))
+        )
+    }
+}
+
+extension BarcodePayload.Symbology {
+    /// Maps Vision's symbology onto the domain layer's, so nothing above
+    /// `RecognizedTextStore` has to import Vision to know what it scanned.
+    init(_ symbology: VNBarcodeSymbology) {
+        switch symbology {
+        case .dataMatrix: self = .dataMatrix
+        case .ean13: self = .ean13
+        case .ean8: self = .ean8
+        case .upce: self = .upce
+        case .code39, .code39Checksum, .code39FullASCII, .code39FullASCIIChecksum: self = .code39
+        case .code128: self = .code128
+        case .gs1DataBar: self = .gs1DataBar
+        case .gs1DataBarExpanded: self = .gs1DataBarExpanded
+        case .gs1DataBarLimited: self = .gs1DataBarLimited
+        default: self = .other
+        }
     }
 }
 
