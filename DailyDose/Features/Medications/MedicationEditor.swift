@@ -153,7 +153,9 @@ struct MedicationEditor: View {
             }
             .sheet(isPresented: $isEditingStartDate) {
                 DateCalendarSheet(title: String(localized: "Starts"), date: $draft.startDate)
-                    .presentationDetents([.medium, .large])
+                    // Content-fitted, like the time sheet: title bar,
+                    // six-week grid, safe area — nothing more.
+                    .presentationDetents([.height(500)])
             }
         }
     }
@@ -1163,7 +1165,8 @@ private struct DateCalendarSheet: View {
             .datePickerStyle(.graphical)
             .labelsHidden()
             .padding(.horizontal)
-            .frame(maxHeight: .infinity, alignment: .top)
+            // No maxHeight frame: the tall frame was what parked the
+            // calendar in the middle of a sea of empty space.
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
