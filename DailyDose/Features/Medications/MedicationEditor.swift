@@ -153,9 +153,9 @@ struct MedicationEditor: View {
             }
             .sheet(isPresented: $isEditingStartDate) {
                 DateCalendarSheet(title: String(localized: "Starts"), date: $draft.startDate)
-                    // Content-fitted, like the time sheet: compact header,
-                    // six-week grid, minimal air — nothing more.
-                    .presentationDetents([.height(460)])
+                    // Fitted, like the time sheet: title bar, six-week
+                    // grid, safe area — nothing more.
+                    .presentationDetents([.height(500)])
             }
         }
     }
@@ -1069,8 +1069,11 @@ private struct SoftPressButtonStyle: ButtonStyle {
 /// big, physical, scroll as long as you like — and it never closes on its
 /// own. The system popover it replaces dismissed itself the moment a wheel
 /// moved, so changing 08:00 to 20:30 took several frustrated round trips.
-/// Here, ✕ and the green ✓ in the toolbar are the only ways out: the
-/// decision to be done belongs to the user, never to the popover.
+///
+/// The header lives in a real toolbar: iOS renders cancellation and
+/// confirmation buttons there as its own matched frosted orbs — the only
+/// place that chrome comes free. Every hand-drawn attempt drifted: one
+/// button lost its glass, the other ballooned.
 private struct TimeWheelSheet: View {
     let time: TimeOfDay
     let onDone: (TimeOfDay) -> Void
@@ -1087,16 +1090,11 @@ private struct TimeWheelSheet: View {
             )
             .datePickerStyle(.wheel)
             .labelsHidden()
-            // Pinned to the sheet's top: a bottom-anchored sheet can never
-            // float mid-screen, but a wheel seated just under the title
-            // reads as high as the presentation allows.
-            .frame(maxHeight: .infinity, alignment: .top)
+            .frame(maxHeight: .infinity)
             .navigationTitle(String(localized: "Choose time"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
-                // The same grammar as every other sheet in the app: ✕ to
-                // cancel on the left, green glass ✓ to confirm on the right.
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
                         onDone(TimeOfDay(from: picked))
@@ -1156,43 +1154,7 @@ private struct DateCalendarSheet: View {
     @State private var picked = Date()
 
     var body: some View {
-        // A compact hand-drawn header instead of a NavigationStack: the
-        // system title bar and safe-area insets were the padding Ysr kept
-        // pointing at. Same glass ✕ and ✓, same grammar — ours to size.
-        VStack(spacing: 4) {
-            HStack {
-                Button {
-                    dismiss()
-                    Haptics.select()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.body.weight(.semibold))
-                        .frame(width: 44, height: 44)
-                        .contentShape(.circle)
-                }
-                .secondaryButton()
-                .accessibilityLabel(String(localized: "Close"))
-                Spacer()
-                Text(title)
-                    .font(.headline)
-                Spacer()
-                Button {
-                    date = picked
-                    Haptics.success()
-                    dismiss()
-                } label: {
-                    Image(systemName: "checkmark")
-                        .font(.body.weight(.bold))
-                        .frame(width: 44, height: 44)
-                        .contentShape(.circle)
-                }
-                .prominentButton()
-                .tint(Theme.taken)
-                .accessibilityLabel(String(localized: "Confirm date"))
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-
+        NavigationStack {
             DatePicker(
                 title,
                 selection: $picked,
@@ -1200,7 +1162,27 @@ private struct DateCalendarSheet: View {
             )
             .datePickerStyle(.graphical)
             .labelsHidden()
-            .padding(.horizontal, 8)
+            .padding(.horizontal)
+            // No maxHeight frame: the tall frame was what parked the
+            // calendar in the middle of a sea of empty space.
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        date = picked
+                        Haptics.success()
+                        dismiss()
+                    } label: {
+                        Image(systemName: "checkmark")
+                            .font(.body.weight(.bold))
+                    }
+                    .prominentButton()
+                    .tint(Theme.taken)
+                    .accessibilityLabel(String(localized: "Confirm date"))
+                }
+            }
         }
         .onAppear { picked = date }
     }

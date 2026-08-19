@@ -46,6 +46,9 @@ struct LabelScannerView: UIViewControllerRepresentable {
             isHighlightingEnabled: true
         )
         scanner.delegate = context.coordinator
+        #if DEBUG
+        ScanProbe.logLaunch(requested: Self.symbologies)
+        #endif
         let container = ScannerContainerViewController(scanner: scanner, store: store)
         container.onBackgroundTap = onBackgroundTap
         return container
@@ -130,6 +133,10 @@ final class RecognizedTextStore {
     }
 
     func update(with items: [RecognizedItem]) {
+        #if DEBUG
+        ScanProbe.record(items: items, interpret: Self.interpret)
+        #endif
+
         var transcripts: [String] = []
         var pack: ScannedPack?
 
@@ -163,24 +170,30 @@ final class RecognizedTextStore {
 
     // MARK: - VisionKit bridging
 
-    private static func interpret(_ barcode: RecognizedItem.Barcode) -> ScannedPack? {
+    /// The bytes to hand the parser.
+    ///
+    /// `payloadData` before `payloadStringValue`, always. The string form is
+    /// decoded text, and the `GS` (0x1D) bytes that separate a GS1 element
+    /// string's variable-length fields do not reliably survive that trip —
+    /// losing one silently merges a batch number with whatever followed it.
+    ///
+    /// Not private, so `ScanProbe` can log the exact bytes production parses
+    /// rather than its own second guess at them.
+    static func payloadBytes(of barcode: RecognizedItem.Barcode) -> [UInt8]? {
         let observation = barcode.observation
-
-        // `payloadData` before `payloadStringValue`, always. The string form is
-        // decoded text, and the `GS` (0x1D) bytes that separate a GS1 element
-        // string's variable-length fields do not reliably survive that trip —
-        // losing one silently merges a batch number with whatever followed it.
-        let bytes: [UInt8]
         if let data = observation.payloadData, !data.isEmpty {
-            bytes = Array(data)
-        } else if let text = observation.payloadStringValue {
-            bytes = Array(text.utf8)
-        } else {
-            return nil
+            return Array(data)
         }
+        if let text = observation.payloadStringValue, !text.isEmpty {
+            return Array(text.utf8)
+        }
+        return nil
+    }
 
+    private static func interpret(_ barcode: RecognizedItem.Barcode) -> ScannedPack? {
+        guard let bytes = payloadBytes(of: barcode) else { return nil }
         return BarcodeInterpreter.interpret(
-            BarcodePayload(bytes: bytes, symbology: .init(observation.symbology))
+            BarcodePayload(bytes: bytes, symbology: .init(barcode.observation.symbology))
         )
     }
 }
@@ -263,6 +276,12 @@ final class ScannerContainerViewController: UIViewController {
         let roi = view.bounds.insetBy(dx: 10, dy: 10)
         if scanner.regionOfInterest != roi {
             scanner.regionOfInterest = roi
+            #if DEBUG
+            ScanProbe.logGeometry(
+                viewBounds: view.bounds, regionOfInterest: roi,
+                scale: view.window?.screen.scale ?? UIScreen.main.scale
+            )
+            #endif
         }
     }
 
@@ -275,6 +294,9 @@ final class ScannerContainerViewController: UIViewController {
             isScanning = true
         } catch {
             isScanning = false
+            #if DEBUG
+            ScanProbe.logScanningFailure(error)
+            #endif
         }
     }
 
