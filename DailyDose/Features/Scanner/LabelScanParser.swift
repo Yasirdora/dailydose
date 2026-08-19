@@ -65,9 +65,19 @@ enum LabelScanParser {
         return words.isEmpty || words.allSatisfy(nameBoilerplate.contains)
     }
 
-    /// The name, or nothing. Never the strength wearing the name's clothes.
+    /// The name, or nothing. Never the strength wearing the name's clothes,
+    /// and never the barcode wearing them either.
+    ///
+    /// A pack prints its own barcode in human-readable form —
+    /// `(01) 05437654786045 (17) 210212 (10)…` — and on a real box the OCR read
+    /// that line and offered it as the medication's name. The boilerplate
+    /// filter let it through because the truncated tail carried a serial with
+    /// letters in it, which reads as an ordinary word. Vocabulary was never
+    /// going to catch this; the shape does. What that text *is* good for is
+    /// `HRIParser`, which reads the identity and the dates straight out of it.
     private static func resolvedName(_ candidate: String) -> String {
-        isBoilerplate(candidate) ? "" : prettifyName(candidate)
+        if isBoilerplate(candidate) || HRIParser.isTranscription(candidate) { return "" }
+        return prettifyName(candidate)
     }
 
     static func containsStrength(_ text: String) -> Bool {

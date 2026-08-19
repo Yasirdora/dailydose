@@ -50,8 +50,6 @@ struct AboutView: View {
                 )
             }
 
-            dataSourcesSection
-
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(String(localized: "Not a medical device"), systemImage: "exclamationmark.triangle.fill")
@@ -74,62 +72,6 @@ struct AboutView: View {
         }
         .navigationTitle(String(localized: "About Daily Dose"))
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    /// Where the drug data came from, and the FDA's own words about it.
-    ///
-    /// Two things are being honoured here. The dataset is public domain (CC0),
-    /// so attribution is courtesy rather than a licence term — but naming your
-    /// sources is how a medical app earns the benefit of the doubt. And the FDA
-    /// asks that its data not be presented as validated for clinical use, which
-    /// is a request worth repeating in their register rather than paraphrasing
-    /// into something softer.
-    ///
-    /// The export date is shown deliberately. Data with no date on it invites
-    /// more trust than it has earned, and a directory built in August cannot
-    /// know about a product listed in September.
-    @ViewBuilder
-    private var dataSourcesSection: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 8) {
-                Label(String(localized: "US drug names"), systemImage: "shippingbox")
-                    .font(.headline)
-                Text(String(localized: """
-                    Product names, strengths and forms for US medications come from                     the FDA's National Drug Code Directory, which is in the public                     domain. It is included in the app as a file.
-                    """))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                if let formatted = directoryDate {
-                    Text(String(localized: "Data from \(formatted)."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-                // The FDA's own caution, in their register rather than ours.
-                Text(String(localized: """
-                    The FDA notes that this data is unvalidated and should not be                     relied on to make decisions about medical care. Daily Dose never                     sends your medications anywhere to look them up — the answers                     are already on your phone.
-                    """))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 6)
-            .accessibilityElement(children: .combine)
-        } header: {
-            Text(String(localized: "Data sources"))
-        }
-    }
-
-    /// The bundled directory's export date, read from the file itself rather
-    /// than hardcoded — a constant here would go stale the first time somebody
-    /// rebuilt the index and forgot to edit this screen.
-    private var directoryDate: String? {
-        guard let stamp = DrugDirectory.bundled?.exportDate, stamp > 0 else { return nil }
-        var components = DateComponents()
-        components.year = stamp / 10_000
-        components.month = (stamp / 100) % 100
-        components.day = stamp % 100
-        guard let date = Calendar.current.date(from: components) else { return nil }
-        return date.formatted(.dateTime.day().month(.wide).year())
     }
 
     private func point(icon: String, title: String, detail: String) -> some View {

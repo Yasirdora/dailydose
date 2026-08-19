@@ -1,6 +1,6 @@
 import Foundation
 
-/// Everything a medicine pack's barcode can tell us without a database.
+/// Everything a medicine pack tells us about itself, without a database.
 ///
 /// Which, in every market on earth, is: what this product is, when it expires,
 /// and which batch it came from. That is enough to match a refill to the
@@ -8,17 +8,6 @@ import Foundation
 /// cupboard went out of date in March — neither of which needs a licence, a
 /// lookup, or a single byte leaving the phone.
 struct ScannedPack: Equatable, Sendable {
-
-    /// Which syntax the pack was printed in. Kept because the two disagree
-    /// about what is legal — see `ExpiryDate.isNonConformant`.
-    enum Syntax: String, Sendable {
-        /// GS1 element string, from a DataMatrix or a DataBar.
-        case gs1
-        /// ISO/IEC 15434 Format 06, the IFA/PPN envelope.
-        case ifaPPN
-        /// A plain linear code carrying nothing but a GTIN.
-        case linear
-    }
 
     /// The identity this pack is filed under, in the app's preference order.
     let key: ProductKey
@@ -32,5 +21,4 @@ struct ScannedPack: Equatable, Sendable {
     /// "tidying" the case would make a recall check quietly wrong.
     let batch: String?
     let expiry: ExpiryDate?
-    let syntax: Syntax
 }

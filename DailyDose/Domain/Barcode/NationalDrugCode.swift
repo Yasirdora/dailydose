@@ -69,8 +69,9 @@ struct NationalDrugCode: Sendable {
     /// Splits a run of digits at a format's segment boundaries.
     ///
     /// The format is an argument rather than something inferred, because there
-    /// is nothing in the digits to infer it from — that is the whole problem
-    /// `NDCResolver` exists to express.
+    /// is nothing in the digits to infer it from: `1234567890` is a valid
+    /// 4-4-2, 5-3-2 *and* 5-4-1 code naming three different products. Only
+    /// `AI (715)`, which prints its own boundaries, reaches this today.
     init?(digits: String, format: Format, confidence: Confidence) {
         let (labeler, product, package) = format.segments
         guard digits.count == labeler + product + package, digits.isASCIIDigits else { return nil }
