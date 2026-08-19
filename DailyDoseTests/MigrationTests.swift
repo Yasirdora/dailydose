@@ -339,4 +339,114 @@ struct MigrationTests {
         #expect(events.first?.medicationName == "Metformin")
         #expect(events.first?.scheduledAt == scheduled)
     }
+
+    /// The shape on every phone running the previous build, opened by the new
+    /// one: the barcode columns arrive empty and everything else is untouched.
+    ///
+    /// This is the highest-risk change in the barcode work. Getting it wrong is
+    /// not a bug in a new feature — it is data loss on update for every
+    /// existing user, which is why it is tested against a real store on disk
+    /// opened through the real `ModelContainer(migrationPlan:)`, not a mock.
+    @Test("A V6 store lightweight-migrates to V7")
+    func v6StoreMigrates() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("migration-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("DailyDose.store")
+
+        let v6Schema = Schema(versionedSchema: DailyDoseSchemaV6.self)
+        let v6Container = try ModelContainer(
+            for: v6Schema,
+            configurations: [ModelConfiguration(schema: v6Schema, url: url)]
+        )
+        let v6Context = ModelContext(v6Container)
+        let medication = DailyDoseSchemaV6.Medication(name: "Metformin")
+        medication.id = "v6-id-1"
+        medication.doseDetail = "500 mg · 2 pills"
+        medication.formRaw = "pill"
+        medication.strengthAmount = 500
+        medication.strengthUnitRaw = "mg"
+        medication.intakeAmount = 2
+        medication.timesRaw = ["08:00", "20:00"]
+        medication.pillsRemaining = 60
+        medication.refillThreshold = 10
+        let scheduled = Fixture.date(2026, 8, 10, 8)
+        v6Context.insert(medication)
+        v6Context.insert(DailyDoseSchemaV6.DoseEvent(
+            medication: medication, scheduledAt: scheduled, statusRaw: "taken", loggedAt: scheduled
+        ))
+        try v6Context.save()
+
+        let currentSchema = Schema(versionedSchema: DailyDoseSchemaV7.self)
+        let container = try ModelContainer(
+            for: currentSchema,
+            migrationPlan: DailyDoseMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: currentSchema, url: url)]
+        )
+        let context = ModelContext(container)
+        let medications = try context.fetch(FetchDescriptor<Medication>())
+        let events = try context.fetch(FetchDescriptor<DoseEvent>())
+
+        #expect(medications.count == 1)
+        let migrated = try #require(medications.first)
+        // Everything the row already held survives untouched.
+        #expect(migrated.id == "v6-id-1")
+        #expect(migrated.displayName == "Metformin")
+        #expect(migrated.doseDetail == "500 mg · 2 pills")
+        #expect(migrated.form == .pill)
+        #expect(migrated.strengthAmount == 500)
+        #expect(migrated.strengthUnit == .mg)
+        #expect(migrated.intakeAmount == 2)
+        #expect(migrated.schedule.sortedTimes.map(\.rawValue) == ["08:00", "20:00"])
+        #expect(migrated.pillsRemaining == 60)
+        #expect(migrated.refillThreshold == 10)
+
+        // The new columns arrive at their defaults. A medication nobody ever
+        // scanned has no barcode and no expiry — and says so, rather than
+        // inventing either.
+        #expect(migrated.productKeyRaw == "")
+        #expect(migrated.productKey == nil)
+        #expect(migrated.expiryDate == nil)
+        #expect(migrated.isExpired() == nil)
+
+        #expect(events.count == 1)
+        #expect(events.first?.medicationName == "Metformin")
+        #expect(events.first?.scheduledAt == scheduled)
+    }
+
+    /// A key written by a build we do not have, or a store somebody edited by
+    /// hand, must read as "unknown" — the same contract `form` has. A crash on
+    /// a screen that only wanted to compare two boxes would be much worse than
+    /// simply not recognising one.
+    @Test("An unreadable product key reads as no key, never as a crash")
+    func productKeyIsToleratedOnRead() throws {
+        let schema = Schema(versionedSchema: DailyDoseSchemaV7.self)
+        let container = try ModelContainer(
+            for: schema,
+            configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        )
+        let context = ModelContext(container)
+        let medication = Medication(
+            name: "Metformin",
+            schedule: Fixture.schedule(start: Fixture.date(2026, 8, 1))
+        )
+        context.insert(medication)
+
+        medication.productKeyRaw = "quantum-barcode:42"
+        #expect(medication.productKey == nil)
+
+        // A GTIN whose check digit disagrees is not a key either, however
+        // well-formed the string around it looks.
+        medication.productKeyRaw = "gtin:00312345678907"
+        #expect(medication.productKey == nil)
+
+        let key = ProductKey.gtin(try #require(GTIN("00312345678906")))
+        medication.productKey = key
+        #expect(medication.productKeyRaw == "gtin:00312345678906")
+        #expect(medication.productKey == key)
+
+        medication.productKey = nil
+        #expect(medication.productKeyRaw == "")
+    }
 }
