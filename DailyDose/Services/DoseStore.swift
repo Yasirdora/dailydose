@@ -287,8 +287,12 @@ final class DoseStore {
         strengthAmount: Double? = nil,
         strengthUnit: StrengthUnit? = nil,
         intakeAmount: Double? = nil,
-        productKey: ProductKey? = nil,
-        expiryDate: Date? = nil
+        // No defaults. `update` writes every field it is given, so a default
+        // here would let a caller that simply forgot these two silently erase
+        // the barcode identity and the expiry date off a scanned medication.
+        // Making them required turns that mistake into a compiler error.
+        productKey: ProductKey?,
+        expiryDate: Date?
     ) {
         medication.name = name.singleLine
         medication.doseDetail = doseDetail.singleLine

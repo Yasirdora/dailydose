@@ -146,6 +146,113 @@ struct BackupTests {
         #expect(Set(restored.map(\.id)) == ["a", "b"])
     }
 
+    /// A restore that unlearns every box the user taught the app is a restore
+    /// that quietly costs them the feature: the next scan of a familiar pack
+    /// creates a duplicate medication instead of offering a refill.
+    @Test("The scanned pack's identity and expiry survive a round trip")
+    @MainActor
+    func scannedPackSurvivesRoundTrip() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let key = ProductKey.pzn(try #require(PZN("12345678")))
+        let expiry = Fixture.date(2027, 3, 31)
+        let medication = Medication(
+            name: "Metformin",
+            schedule: Fixture.schedule(start: Fixture.date(2026, 8, 1)),
+            productKey: key,
+            expiryDate: expiry
+        )
+        context.insert(medication)
+        try context.save()
+
+        let archive = BackupService.makeArchive(medications: [medication], events: [])
+        #expect(archive.version == 5)
+        #expect(archive.medications.first?.productKeyRaw == "pzn:12345678")
+
+        let decoded = try BackupService.decode(try BackupService.encode(archive))
+        let restored = try makeContainer()
+        _ = try BackupService.restore(decoded, into: restored.mainContext)
+
+        let fetched = try restored.mainContext.fetch(FetchDescriptor<Medication>())
+        let result = try #require(fetched.first)
+        #expect(result.productKey == key)
+        #expect(result.expiryDate == expiry)
+
+        // And a second restore over the top updates rather than duplicates,
+        // keeping both fields.
+        _ = try BackupService.restore(decoded, into: restored.mainContext)
+        let again = try restored.mainContext.fetch(FetchDescriptor<Medication>())
+        #expect(again.count == 1)
+        #expect(again.first?.productKey == key)
+        #expect(again.first?.expiryDate == expiry)
+    }
+
+    /// A medication nobody ever scanned has no barcode and no expiry. The
+    /// archive must say that rather than inventing either — and an archive
+    /// written before v5 must still decode.
+    @Test("An unscanned medication round-trips with no pack, and v4 still decodes")
+    @MainActor
+    func unscannedMedicationAndOlderArchives() throws {
+        let container = try makeContainer()
+        let medication = Medication(
+            name: "Typed by hand",
+            schedule: Fixture.schedule(start: Fixture.date(2026, 8, 1))
+        )
+        container.mainContext.insert(medication)
+        try container.mainContext.save()
+
+        let archive = BackupService.makeArchive(medications: [medication], events: [])
+        #expect(archive.medications.first?.productKeyRaw == "")
+        #expect(archive.medications.first?.expiryDate == nil)
+
+        // A v4 archive: the two keys simply absent from the JSON.
+        var v4 = archive
+        v4.version = 4
+        v4.medications[0].productKeyRaw = nil
+        v4.medications[0].expiryDate = nil
+        let decoded = try BackupService.decode(try BackupService.encode(v4))
+
+        let restored = try makeContainer()
+        _ = try BackupService.restore(decoded, into: restored.mainContext)
+        let result = try #require(try restored.mainContext.fetch(FetchDescriptor<Medication>()).first)
+        #expect(result.productKeyRaw == "")
+        #expect(result.productKey == nil)
+        #expect(result.expiryDate == nil)
+    }
+
+    /// A key written by a build that knows a code this one does not must
+    /// survive the round trip rather than be dropped in the middle of it.
+    /// It reads as "no key" here — never as a crash, and never as a wrong
+    /// match — and is still there when that build reads it back.
+    @Test("An unreadable product key is preserved, not discarded")
+    @MainActor
+    func unknownProductKeyIsPreserved() throws {
+        let target = try makeContainer()
+        let archive = BackupService.Archive(
+            exportedAt: .now,
+            medications: [BackupService.MedicationRecord(
+                id: "future", name: "From a later build", doseDetail: "", notes: "",
+                colorName: MedicationColor.navy.rawValue,
+                productKeyRaw: "quantum:42",
+                isActive: true, createdAt: .now,
+                scheduleKind: ScheduleKind.daily.rawValue, times: ["08:00"], weekdays: Array(1...7),
+                intervalDays: 1, dayOfMonth: nil, startDate: Fixture.date(2026, 8, 1), endDate: nil,
+                pillsRemaining: nil, refillThreshold: nil
+            )],
+            events: []
+        )
+        _ = try BackupService.restore(archive, into: target.mainContext)
+
+        let result = try #require(try target.mainContext.fetch(FetchDescriptor<Medication>()).first)
+        #expect(result.productKeyRaw == "quantum:42", "kept verbatim for the build that understands it")
+        #expect(result.productKey == nil, "and read as nothing by this one")
+
+        // Re-exporting hands it back unchanged.
+        let round = BackupService.makeArchive(medications: [result], events: [])
+        #expect(round.medications.first?.productKeyRaw == "quantum:42")
+    }
+
     @Test("A backup from a newer format is refused rather than misread")
     func rejectsNewerVersions() throws {
         var archive = BackupService.Archive(exportedAt: .now, medications: [], events: [])

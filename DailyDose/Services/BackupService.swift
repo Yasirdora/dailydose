@@ -14,9 +14,12 @@ import SwiftData
 /// `BackupServiceTests.testExportImportRoundTrip`.
 enum BackupService {
 
-    /// v4 adds structured strength (amount, unit, per-dose intake). Older
-    /// builds refuse a v4 archive rather than silently dropping the numbers.
-    static let currentVersion = 4
+    /// v5 adds the scanned pack: the barcode identity and the expiry date it
+    /// carried. Without them a restore silently unlearns every box the user
+    /// had taught the app, and the next scan of a familiar pack creates a
+    /// duplicate medication instead of offering a refill. Older builds refuse
+    /// a v5 archive rather than dropping either.
+    static let currentVersion = 5
     static let fileExtension = "dailydose"
 
     // MARK: - Wire format
@@ -43,6 +46,14 @@ enum BackupService {
         var strengthAmount: Double? = nil
         var strengthUnitRaw: String? = nil
         var intakeAmount: Double? = nil
+        /// The scanned barcode identity, format v5. Optional so older archives
+        /// still decode; nil means the pack was never scanned. Carried as the
+        /// raw string rather than a decoded key, so an archive written by a
+        /// build that knows a code this one does not survives the round trip
+        /// intact instead of being dropped on the way through.
+        var productKeyRaw: String? = nil
+        /// The scanned pack's expiry date, format v5.
+        var expiryDate: Date? = nil
         var isActive: Bool
         var createdAt: Date
 
@@ -96,6 +107,8 @@ enum BackupService {
                     strengthAmount: medication.strengthAmount,
                     strengthUnitRaw: medication.strengthUnitRaw,
                     intakeAmount: medication.intakeAmount,
+                    productKeyRaw: medication.productKeyRaw,
+                    expiryDate: medication.expiryDate,
                     isActive: medication.isActive,
                     createdAt: medication.createdAt,
                     scheduleKind: schedule.kind.rawValue,
@@ -201,6 +214,8 @@ enum BackupService {
                 if let amount = record.strengthAmount { existing.strengthAmount = amount }
                 if let unitRaw = record.strengthUnitRaw { existing.strengthUnitRaw = unitRaw }
                 if let intake = record.intakeAmount { existing.intakeAmount = intake }
+                if let productKeyRaw = record.productKeyRaw { existing.productKeyRaw = productKeyRaw }
+                if let expiryDate = record.expiryDate { existing.expiryDate = expiryDate }
                 existing.isActive = record.isActive
                 existing.schedule = schedule
                 existing.pillsRemaining = record.pillsRemaining
@@ -220,9 +235,16 @@ enum BackupService {
                     strengthAmount: record.strengthAmount,
                     strengthUnit: record.strengthUnitRaw.flatMap { StrengthUnit.named($0) },
                     intakeAmount: record.intakeAmount,
+                    expiryDate: record.expiryDate,
                     isActive: record.isActive,
                     createdAt: record.createdAt
                 )
+                // Assigned raw rather than passed as a decoded `ProductKey`,
+                // for the same reason the record carries a string: a key this
+                // build cannot read must survive the round trip, not be
+                // dropped in the middle of it. `productKey` already reads an
+                // unknown value as nil, so nothing downstream is at risk.
+                medication.productKeyRaw = record.productKeyRaw ?? ""
                 context.insert(medication)
                 byID[record.id] = medication
                 summary.medicationsAdded += 1

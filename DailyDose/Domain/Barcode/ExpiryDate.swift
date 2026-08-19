@@ -29,7 +29,7 @@ struct ExpiryDate: Equatable, Sendable {
     /// How a two-digit year is to be read, which is not the same question in
     /// the two syntaxes.
     enum Encoding: Sendable {
-        /// GS1. See `resolveYear` for why this is not GS1's own window.
+        /// GS1: a hundred-year window sliding with the current year.
         case gs1
         /// IFA: PPN dates are always 21st century, full stop.
         case ppn
@@ -70,18 +70,20 @@ struct ExpiryDate: Equatable, Sendable {
 
     /// Turns `YY` into a year.
     ///
-    /// PPN is stated: 21st century, always.
+    /// PPN is stated outright: IFA dates are 21st century, always.
     ///
-    /// GS1 specifies a ±50-year sliding window, which we deliberately do not
-    /// implement. A medicine's shelf life does not reach a decade, so the
-    /// window here is biased forward — two years back, ninety-seven forward —
-    /// on the reasoning that a box in someone's hand is far more likely to be
-    /// expiring soon than to have expired in the last century.
+    /// GS1's window is centred on the current year, not on the current
+    /// century — the distinction that makes it the right rule rather than an
+    /// awkward one. Read forward fifty years and back forty-nine, so in 2026 a
+    /// `YY` of 25 is last year and a `YY` of 18 is eight years ago, which is
+    /// what a box that expired in 2018 should say.
     ///
-    /// The cost of that bias is at the other end: a pack more than two years
-    /// past its date reads as roughly a century in the future rather than
-    /// slightly in the past. Any hundred-year window has to break somewhere,
-    /// and this is where we chose to put the seam.
+    /// An earlier version of this replaced the window with a forward-biased
+    /// one, on the belief that GS1's rule would read a recently-expired pack
+    /// as a date in the 1920s. It does not: that reading only follows from
+    /// centring the window on the century. The bias was solving a problem that
+    /// did not exist, and it cost real accuracy — every pack more than two
+    /// years past its date came back roughly a century in the future.
     private static func resolveYear(
         _ yy: Int, encoding: Encoding, reference: Date, calendar: Calendar
     ) -> Int {
@@ -89,8 +91,13 @@ struct ExpiryDate: Equatable, Sendable {
         case .ppn:
             return 2000 + yy
         case .gs1:
-            let lowerBound = calendar.component(.year, from: reference) - 2
-            return lowerBound + ((yy - lowerBound % 100) + 100) % 100
+            let referenceYear = calendar.component(.year, from: reference)
+            let century = (referenceYear / 100) * 100
+            switch yy - referenceYear % 100 {
+            case 51...99: return century - 100 + yy
+            case -99...(-50): return century + 100 + yy
+            default: return century + yy
+            }
         }
     }
 

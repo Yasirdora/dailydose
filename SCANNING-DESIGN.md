@@ -272,9 +272,18 @@ The PPN algorithm operating on ASCII values rather than digit values is the clas
 Two market-specific wrinkles that a single code path gets wrong:
 
 - **GS1 healthcare has prohibited `DD = 00` since 1 January 2025.** German **PPN syntax still permits it.** So we must *accept* `00` on input from both (legacy stock is still in circulation) and normalise to the month's last day, while only flagging it as non-conformant for newly-issued GS1 codes.
-- **Century window differs by syntax.** GS1 specifies a ±50-year sliding window. IFA states PPN dates are always 21st century, i.e. `year = 2000 + YY`.
+- **Century window differs by syntax.** GS1 slides a hundred-year window with the current year: fifty forward, forty-nine back. IFA states PPN dates are always 21st century, i.e. `year = 2000 + YY`.
 
-The GS1 window has a nasty edge for us: in 2026, `YY = 25` resolves to **1925**, not 2025 — technically correct, and absurd on screen for a pack that expired last year. **For medicine expiry we override to a forward-biased window** (`[today − 2 years, today + 97 years]`) and log the deviation. Shelf lives beyond a decade do not exist in this category.
+**Correction, Phase 1.** An earlier draft of this section claimed the GS1 window resolves `YY = 25` to **1925** in 2026, and proposed a forward-biased override (`[today − 2 years, today + 97 years]`) to avoid it. That claim was wrong. GS1's window is centred on the current *year*, not the current century:
+
+```
+difference = YY − (current year mod 100)
+  51 … 99   → previous century
+ −99 … −50  → next century
+ otherwise  → current century
+```
+
+In 2026 that reads `YY = 25` as **2025** and `YY = 18` as **2018** — exactly what a pack that expired last year, or eight years ago, should say. The forward bias solved a problem that did not exist and cost real accuracy: every pack more than two years past its date came back roughly a century in the future. **We implement GS1's own rule.** Shipped in Phase 1; see `ExpiryDate.resolveYear`.
 
 ---
 
