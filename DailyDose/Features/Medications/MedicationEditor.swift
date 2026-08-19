@@ -10,6 +10,10 @@ import SwiftData
 struct MedicationEditor: View {
     let medication: Medication?
     var prefill: LabelScanParser.Result?
+    /// What the box's barcode said, when the editor was opened by a scan.
+    /// It fills no field on this screen: it is stored so the *next* scan of
+    /// the same pack finds this medication instead of adding another one.
+    var pack: ScannedPack?
     var onSaved: (() -> Void)?
 
     @Environment(\.doseStore) private var store
@@ -98,7 +102,7 @@ struct MedicationEditor: View {
             .task {
                 guard !didLoad else { return }
                 didLoad = true
-                draft = MedicationDraft(medication: medication, prefill: prefill)
+                draft = MedicationDraft(medication: medication, prefill: prefill, pack: pack)
                 // Editing a medication that already has notes or custom
                 // reminders opens with those sections expanded — the screen
                 // should reflect what is configured, not hide it. (Supply
@@ -112,8 +116,9 @@ struct MedicationEditor: View {
             .sheet(item: $route) { route in
                 switch route {
                 case .scanner:
-                    LabelScannerSheet { result in
+                    LabelScannerSheet { result, scannedPack in
                         draft.apply(result)
+                        if let scannedPack { draft.apply(scannedPack) }
                         Haptics.success()
                     }
                 case .frequency:
@@ -124,15 +129,23 @@ struct MedicationEditor: View {
                     FormPicker(selection: $draft.form)
                 }
             }
-            .sheet(item: $editingTime) { time in
-                TimeWheelSheet(time: time) { picked in
-                    draft.replace(time, with: picked)
+            // Time and date pickers are Apple's own popovers: a native
+            // floating card with the system's material, animation and
+            // lifecycle — `.none` keeps the popover even in compact width,
+            // which is how it floats centered instead of sliding up.
+            .popover(item: $editingTime) { time in
+                TimeWheelPopover(time: time) { picked in
+                    if let picked { draft.replace(time, with: picked) }
+                    editingTime = nil
                 }
-                .presentationDetents([.medium])
+                .presentationCompactAdaptation(.none)
             }
-            .sheet(isPresented: $isEditingStartDate) {
-                DateCalendarSheet(title: String(localized: "Starts"), date: $draft.startDate)
-                    .presentationDetents([.medium, .large])
+            .popover(isPresented: $isEditingStartDate) {
+                DateCalendarPopover(date: draft.startDate) { picked in
+                    if let picked { draft.startDate = picked }
+                    isEditingStartDate = false
+                }
+                .presentationCompactAdaptation(.none)
             }
         }
     }
@@ -651,7 +664,9 @@ struct MedicationEditor: View {
                 importance: draft.importance, form: form,
                 strengthAmount: draft.parsedStrength,
                 strengthUnit: draft.parsedStrength != nil ? draft.strengthUnit : nil,
-                intakeAmount: draft.parsedIntake
+                intakeAmount: draft.parsedIntake,
+                productKey: draft.productKey,
+                expiryDate: draft.expiryDate
             )
         } else {
             store.add(
@@ -661,7 +676,9 @@ struct MedicationEditor: View {
                 importance: draft.importance, form: form,
                 strengthAmount: draft.parsedStrength,
                 strengthUnit: draft.parsedStrength != nil ? draft.strengthUnit : nil,
-                intakeAmount: draft.parsedIntake
+                intakeAmount: draft.parsedIntake,
+                productKey: draft.productKey,
+                expiryDate: draft.expiryDate
             )
         }
         Haptics.success()
@@ -1036,23 +1053,22 @@ private struct SoftPressButtonStyle: ButtonStyle {
     }
 }
 
-// MARK: - Time wheel
+// MARK: - Time wheel popover
 
-/// The time chooser an 80-year-old can't fumble: Apple's own alarm wheel —
-/// big, physical, scroll as long as you like — and it never closes on its
-/// own. The system popover it replaces dismissed itself the moment a wheel
-/// moved, so changing 08:00 to 20:30 took several frustrated round trips.
-/// Here, the big green ✓ is the only way out: the decision to be done
-/// belongs to the user, never to the popover.
-private struct TimeWheelSheet: View {
+/// The time chooser an 80-year-old can't fumble: Apple's own alarm wheel
+/// inside a native popover — the system's floating card, material and
+/// animation, nothing hand-rolled. ✕ cancels bottom-left, the green glass
+/// ✓ confirms bottom-right; the popover never closes because a wheel moved,
+/// the way the system's compact popover once did.
+private struct TimeWheelPopover: View {
     let time: TimeOfDay
-    let onDone: (TimeOfDay) -> Void
+    /// `nil` means cancelled; a value means confirmed.
+    let onDone: (TimeOfDay?) -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var picked = Date()
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 8) {
             DatePicker(
                 String(localized: "Time"),
                 selection: $picked,
@@ -1060,28 +1076,14 @@ private struct TimeWheelSheet: View {
             )
             .datePickerStyle(.wheel)
             .labelsHidden()
-            .frame(maxHeight: .infinity)
-            .navigationTitle(String(localized: "Choose time"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
-                // The same grammar as every other sheet in the app: ✕ to
-                // cancel on the left, green glass ✓ to confirm on the right.
-                ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        onDone(TimeOfDay(from: picked))
-                        Haptics.success()
-                        dismiss()
-                    } label: {
-                        Image(systemName: "checkmark")
-                            .font(.body.weight(.bold))
-                    }
-                    .prominentButton()
-                    .tint(Theme.taken)
-                    .accessibilityLabel(String(localized: "Confirm time"))
-                }
-            }
+
+            PopoverActions(
+                onCancel: { onDone(nil) },
+                onConfirm: { onDone(TimeOfDay(from: picked)) }
+            )
         }
+        .padding(20)
+        .frame(width: 320, height: 350)
         .onAppear {
             // Not `?? .now`: on the morning the clocks jump forward a 02:30
             // dose has no instant that day, and falling back to the current
@@ -1112,49 +1114,76 @@ private struct EditorChip: View {
     }
 }
 
-// MARK: - Calendar sheet
+// MARK: - Calendar popover
 
 /// The date counterpart of the time wheel: Apple's graphical calendar —
-/// big day numbers, swipe between months — that stays open until the green
-/// ✓ says done. Same grammar as every sheet in the app: ✕ cancels, ✓
-/// confirms.
-private struct DateCalendarSheet: View {
-    let title: String
-    @Binding var date: Date
+/// big day numbers, swipe between months — inside the same native popover,
+/// with the same ✕ / green ✓ grammar at the bottom.
+private struct DateCalendarPopover: View {
+    let date: Date
+    /// `nil` means cancelled; a value means confirmed.
+    let onDone: (Date?) -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var picked = Date()
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 8) {
             DatePicker(
-                title,
+                String(localized: "Starts"),
                 selection: $picked,
                 displayedComponents: .date
             )
             .datePickerStyle(.graphical)
             .labelsHidden()
-            .padding(.horizontal)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        date = picked
-                        Haptics.success()
-                        dismiss()
-                    } label: {
-                        Image(systemName: "checkmark")
-                            .font(.body.weight(.bold))
-                    }
-                    .prominentButton()
-                    .tint(Theme.taken)
-                    .accessibilityLabel(String(localized: "Confirm date"))
-                }
-            }
+
+            PopoverActions(
+                onCancel: { onDone(nil) },
+                onConfirm: { onDone(picked) }
+            )
         }
+        .padding(20)
+        .frame(width: 360, height: 470)
         .onAppear { picked = date }
+    }
+}
+
+// MARK: - Popover actions
+
+/// The two exits every picker popover shares: ✕ in quiet glass on the
+/// left, a green glass ✓ on the right. One layout, one grammar — the row
+/// can never drift between popovers.
+private struct PopoverActions: View {
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        HStack {
+            Button {
+                onCancel()
+                Haptics.select()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 56, height: 56)
+                    .contentShape(.circle)
+            }
+            .secondaryButton()
+            .accessibilityLabel(String(localized: "Cancel"))
+
+            Spacer()
+
+            Button {
+                onConfirm()
+                Haptics.success()
+            } label: {
+                Image(systemName: "checkmark")
+                    .font(.body.weight(.bold))
+                    .frame(width: 56, height: 56)
+                    .contentShape(.circle)
+            }
+            .prominentButton()
+            .tint(Theme.taken)
+            .accessibilityLabel(String(localized: "Confirm"))
+        }
     }
 }
