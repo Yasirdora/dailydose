@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Everything Xcode's INFOPLIST_KEY_ build settings can express stays in
+	     the project file; GENERATE_INFOPLIST_FILE merges those on top of this.
+	     These two cannot be expressed that way. Both were set as
+	     INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers and
+	     INFOPLIST_KEY_UIBackgroundModes for months and were silently dropped
+	     from the built Info.plist, because Xcode only honours that mechanism
+	     for keys on a fixed allowlist and neither of these is on it. There is
+	     no warning. The only symptom was a line in the device console —
+	     "Registration rejected; com.dailydose.ios.refresh is not advertised in
+	     the application's Info.plist" — and reminders for finite courses and
+	     interval schedules that were never topped up unless the app was
+	     opened, which is the single worst way for a medication app to fail. -->
+
+	<!-- Must match DailyDoseApp.refreshTaskIdentifier exactly. BGTaskScheduler
+	     refuses to register an identifier that is not listed here. -->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.dailydose.ios.refresh</string>
+	</array>
+
+	<!-- Required for BGAppRefreshTaskRequest to be *launched* once registered.
+	     Without it registration can succeed and the task still never runs, so
+	     this is not redundant with the key above — it is the other half. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+</dict>
+</plist>
