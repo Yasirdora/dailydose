@@ -17,6 +17,9 @@ struct MedicationEditor: View {
 
     @State private var draft = MedicationDraft()
     @State private var route: Route?
+    /// The time currently being tuned on the wheel. The sheet stays open
+    /// until the user confirms — see TimeWheelSheet.
+    @State private var editingTime: TimeOfDay?
     @State private var didLoad = false
     /// The essentials stay visible. Everything else is available without
     /// making a first-time setup feel like a medical intake form.
@@ -111,6 +114,12 @@ struct MedicationEditor: View {
                 case .form:
                     FormPicker(selection: $draft.form)
                 }
+            }
+            .sheet(item: $editingTime) { time in
+                TimeWheelSheet(time: time) { picked in
+                    draft.replace(time, with: picked)
+                }
+                .presentationDetents([.medium])
             }
         }
     }
@@ -330,17 +339,33 @@ struct MedicationEditor: View {
 
             ForEach(Array(draft.times.sorted().enumerated()), id: \.element) { index, time in
                 rowDivider
-                editorRow {
-                    DatePicker(
-                        draft.kind == .everyXHours
-                            ? String(localized: "Starting at")
-                            : draft.times.count == 1
-                                ? String(localized: "Time")
-                                : String(localized: "Time \(index + 1)"),
-                        selection: binding(for: time),
-                        displayedComponents: .hourAndMinute
-                    )
+                Button {
+                    editingTime = time
+                    Haptics.select()
+                } label: {
+                    HStack {
+                        Text(
+                            draft.kind == .everyXHours
+                                ? String(localized: "Starting at")
+                                : draft.times.count == 1
+                                    ? String(localized: "Time")
+                                    : String(localized: "Time \(index + 1)")
+                        )
+                        .foregroundStyle(.primary)
+                        Spacer()
+                        Text(time.formatted())
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 3)
+                            .background(Color(.tertiarySystemFill), in: .capsule)
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, minHeight: editorRowHeight)
+                    .contentShape(.rect)
                 }
+                .buttonStyle(SoftPressButtonStyle())
+                .accessibilityHint(String(localized: "Opens the time wheel"))
             }
 
             rowDivider
@@ -594,20 +619,6 @@ struct MedicationEditor: View {
     }
 
     // MARK: - Time editing
-
-    /// Editing a time replaces it in the set. Because `times` is a `Set`,
-    /// dragging one picker onto another's value collapses them instead of
-    /// creating two doses that fire at the same instant.
-    private func binding(for time: TimeOfDay) -> Binding<Date> {
-        Binding(
-            get: { time.date(on: .now, calendar: .current) ?? .now },
-            set: { newValue in
-                let updated = TimeOfDay(from: newValue)
-                guard updated != time else { return }
-                draft.replace(time, with: updated)
-            }
-        )
-    }
 
     private func save() {
         guard let store, let schedule = draft.buildSchedule() else { return }
@@ -1006,5 +1017,59 @@ private struct SoftPressButtonStyle: ButtonStyle {
         configuration.label
             .opacity(configuration.isPressed ? 0.55 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Time wheel
+
+/// The time chooser an 80-year-old can't fumble: Apple's own alarm wheel —
+/// big, physical, scroll as long as you like — and it never closes on its
+/// own. The system popover it replaces dismissed itself the moment a wheel
+/// moved, so changing 08:00 to 20:30 took several frustrated round trips.
+/// Here, the big green ✓ is the only way out: the decision to be done
+/// belongs to the user, never to the popover.
+private struct TimeWheelSheet: View {
+    let time: TimeOfDay
+    let onDone: (TimeOfDay) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var picked = Date()
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                DatePicker(
+                    String(localized: "Time"),
+                    selection: $picked,
+                    displayedComponents: .hourAndMinute
+                )
+                .datePickerStyle(.wheel)
+                .labelsHidden()
+
+                Button {
+                    onDone(TimeOfDay(from: picked))
+                    Haptics.success()
+                    dismiss()
+                } label: {
+                    Image(systemName: "checkmark")
+                        .font(.title2.weight(.bold))
+                        .frame(maxWidth: .infinity, minHeight: 56)
+                        .contentShape(.rect)
+                }
+                .prominentButton()
+                .tint(Theme.taken)
+                .padding(.horizontal, 24)
+                .accessibilityLabel(String(localized: "Confirm time"))
+            }
+            .padding(.top, 12)
+            .navigationTitle(String(localized: "Choose time"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+            }
+        }
+        .onAppear {
+            picked = time.date(on: .now, calendar: .current) ?? .now
+        }
     }
 }

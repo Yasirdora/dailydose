@@ -11,9 +11,11 @@ import Foundation
 /// * `Comparable` gives correct ordering without lexical sorting.
 /// * `Hashable` makes duplicate dose times impossible to store (we keep a Set).
 /// * One parser, one formatter, one source of truth.
-struct TimeOfDay: Hashable, Comparable, Codable, Sendable {
+struct TimeOfDay: Hashable, Comparable, Codable, Sendable, Identifiable {
     let hour: Int      // 0…23
     let minute: Int    // 0…59
+
+    var id: String { rawValue }
 
     /// Fails rather than clamping: an out-of-range time is corrupt data, and
     /// silently turning 25:00 into 23:59 would hide the corruption.
