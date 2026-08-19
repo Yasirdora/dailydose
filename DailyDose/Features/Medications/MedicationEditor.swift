@@ -59,11 +59,15 @@ struct MedicationEditor: View {
 
                     detailsSection
                     scheduleSection
+                    // Supply is schedule logic, not personalization: the
+                    // refill forecast *is* the schedule speaking (supply ÷
+                    // doses per day). It stands as its own card right after
+                    // Schedule — always visible, never collapsed away.
+                    supplySection
                     moreOptionsSection
 
                     if showsMoreOptions {
                         notesSection
-                        supplySection
                         remindersSection
                         colorSection
                     }
@@ -95,12 +99,12 @@ struct MedicationEditor: View {
                 guard !didLoad else { return }
                 didLoad = true
                 draft = MedicationDraft(medication: medication, prefill: prefill)
-                // Editing a medication that already has notes, supply or
-                // custom reminders opens with those sections expanded — the
-                // screen should reflect what is configured, not hide it.
+                // Editing a medication that already has notes or custom
+                // reminders opens with those sections expanded — the screen
+                // should reflect what is configured, not hide it. (Supply
+                // is always visible now; it needs no expansion.)
                 if let medication {
                     showsMoreOptions = !medication.notes.isEmpty
-                        || medication.pillsRemaining != nil
                         || medication.importance != .standard
                         || MedicationColor.named(medication.colorName) != .default
                 }
