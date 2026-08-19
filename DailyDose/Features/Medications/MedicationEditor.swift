@@ -153,9 +153,9 @@ struct MedicationEditor: View {
             }
             .sheet(isPresented: $isEditingStartDate) {
                 DateCalendarSheet(title: String(localized: "Starts"), date: $draft.startDate)
-                    // Content-fitted, like the time sheet: title bar,
-                    // six-week grid, safe area — nothing more.
-                    .presentationDetents([.height(500)])
+                    // Content-fitted, like the time sheet: compact header,
+                    // six-week grid, minimal air — nothing more.
+                    .presentationDetents([.height(460)])
             }
         }
     }
@@ -1156,7 +1156,43 @@ private struct DateCalendarSheet: View {
     @State private var picked = Date()
 
     var body: some View {
-        NavigationStack {
+        // A compact hand-drawn header instead of a NavigationStack: the
+        // system title bar and safe-area insets were the padding Ysr kept
+        // pointing at. Same glass ✕ and ✓, same grammar — ours to size.
+        VStack(spacing: 4) {
+            HStack {
+                Button {
+                    dismiss()
+                    Haptics.select()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(.circle)
+                }
+                .secondaryButton()
+                .accessibilityLabel(String(localized: "Close"))
+                Spacer()
+                Text(title)
+                    .font(.headline)
+                Spacer()
+                Button {
+                    date = picked
+                    Haptics.success()
+                    dismiss()
+                } label: {
+                    Image(systemName: "checkmark")
+                        .font(.body.weight(.bold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(.circle)
+                }
+                .prominentButton()
+                .tint(Theme.taken)
+                .accessibilityLabel(String(localized: "Confirm date"))
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+
             DatePicker(
                 title,
                 selection: $picked,
@@ -1164,27 +1200,7 @@ private struct DateCalendarSheet: View {
             )
             .datePickerStyle(.graphical)
             .labelsHidden()
-            .padding(.horizontal)
-            // No maxHeight frame: the tall frame was what parked the
-            // calendar in the middle of a sea of empty space.
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        date = picked
-                        Haptics.success()
-                        dismiss()
-                    } label: {
-                        Image(systemName: "checkmark")
-                            .font(.body.weight(.bold))
-                    }
-                    .prominentButton()
-                    .tint(Theme.taken)
-                    .accessibilityLabel(String(localized: "Confirm date"))
-                }
-            }
+            .padding(.horizontal, 8)
         }
         .onAppear { picked = date }
     }
