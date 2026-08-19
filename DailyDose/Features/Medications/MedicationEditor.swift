@@ -20,6 +20,8 @@ struct MedicationEditor: View {
     /// The time currently being tuned on the wheel. The sheet stays open
     /// until the user confirms — see TimeWheelSheet.
     @State private var editingTime: TimeOfDay?
+    /// Same grammar for the start date: a big calendar, a green ✓.
+    @State private var isEditingStartDate = false
     @State private var didLoad = false
     /// The essentials stay visible. Everything else is available without
     /// making a first-time setup feel like a medical intake form.
@@ -81,6 +83,9 @@ struct MedicationEditor: View {
                     Button(String(localized: "Save")) { save() }
                         .fontWeight(.semibold)
                         .disabled(!draft.isValid)
+                        // Sighted users can read the form back before
+                        // committing; this is that same check, spoken.
+                        .accessibilityHint(draft.accessibilitySummary)
                 }
             }
             // `.task` rather than `.onAppear`: onAppear can fire again when the
@@ -120,6 +125,10 @@ struct MedicationEditor: View {
                     draft.replace(time, with: picked)
                 }
                 .presentationDetents([.medium])
+            }
+            .sheet(isPresented: $isEditingStartDate) {
+                DateCalendarSheet(title: String(localized: "Starts"), date: $draft.startDate)
+                    .presentationDetents([.medium, .large])
             }
         }
     }
@@ -167,16 +176,10 @@ struct MedicationEditor: View {
                 }
             }
         } label: {
-            HStack(spacing: 3) {
-                Text(draft.strengthUnit?.displayName ?? String(localized: "unit"))
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2.weight(.bold))
-            }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(draft.strengthUnit == nil ? Theme.accent : .primary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 3)
-            .background(Color(.tertiarySystemFill), in: .capsule)
+            EditorChip(
+                text: draft.strengthUnit?.displayName ?? String(localized: "unit"),
+                highlighted: draft.strengthUnit == nil
+            )
         }
         .menuIndicator(.hidden)
         .accessibilityLabel(String(localized: "Strength unit"))
@@ -353,12 +356,7 @@ struct MedicationEditor: View {
                         )
                         .foregroundStyle(.primary)
                         Spacer()
-                        Text(time.formatted())
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.primary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 3)
-                            .background(Color(.tertiarySystemFill), in: .capsule)
+                        EditorChip(text: time.formatted())
                     }
                     .padding(.horizontal, 16)
                     .frame(maxWidth: .infinity, minHeight: editorRowHeight)
@@ -369,13 +367,22 @@ struct MedicationEditor: View {
             }
 
             rowDivider
-            editorRow {
-                DatePicker(
-                    String(localized: "Starts"),
-                    selection: $draft.startDate,
-                    displayedComponents: .date
-                )
+            Button {
+                isEditingStartDate = true
+                Haptics.select()
+            } label: {
+                HStack {
+                    Text(String(localized: "Starts"))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    EditorChip(text: draft.startDate.formatted(.dateTime.day().month(.abbreviated).year()))
+                }
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, minHeight: editorRowHeight)
+                .contentShape(.rect)
             }
+            .buttonStyle(SoftPressButtonStyle())
+            .accessibilityHint(String(localized: "Opens the calendar"))
 
             rowDivider
             Button { route = .duration } label: {
@@ -501,16 +508,7 @@ struct MedicationEditor: View {
                         }
                     }
                 } label: {
-                    HStack(spacing: 3) {
-                        Text(draft.importance.title)
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption2.weight(.bold))
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-                    .background(Color(.tertiarySystemFill), in: .capsule)
+                    EditorChip(text: draft.importance.title)
                 }
                 .menuIndicator(.hidden)
                 .accessibilityLabel(String(localized: "Reminder strength"))
@@ -592,6 +590,14 @@ struct MedicationEditor: View {
         } else if draft.times.isEmpty {
             return Text(String(localized: "Add at least one time so reminders can be scheduled."))
                 .foregroundStyle(Theme.due)
+        } else if draft.hasEmptyWeekdays {
+            // The picker allows deselecting all seven. Save then greys out,
+            // and without this line nothing on screen said why.
+            return Text(String(localized: "Choose at least one day of the week."))
+                .foregroundStyle(Theme.due)
+        } else if draft.hasEndBeforeStart {
+            return Text(String(localized: "The end date is before the start date — move one of them."))
+                .foregroundStyle(Theme.due)
         } else if draft.kind == .daily, draft.times.count > 1 {
             return Text(String(localized: "Review the suggested times and change them to match your medication instructions."))
                 .foregroundStyle(.secondary)
@@ -602,6 +608,12 @@ struct MedicationEditor: View {
     private var supplyFooter: Text {
         // Numeric fields are typed now, so "thirty" can't silently disable
         // supply tracking the way free-text `Int(_:)` parsing did.
+        if draft.isMissingSupplyCount {
+            // A blank count used to persist as 0, and 0 <= 0 made a medication
+            // low on supply the instant it was saved.
+            return Text(String(localized: "Enter how many doses you have on hand, or turn tracking off."))
+                .foregroundStyle(Theme.due)
+        }
         if draft.tracksSupply, draft.refillThresholdExceedsSupply {
             return Text(String(localized: "The warning level is higher than what you have — you'll be alerted right away."))
                 .foregroundStyle(Theme.due)
@@ -629,7 +641,7 @@ struct MedicationEditor: View {
         if let medication {
             store.update(
                 medication,
-                name: draft.name, doseDetail: draft.resolvedDoseDetail, notes: draft.notes,
+                name: draft.trimmedName, doseDetail: draft.resolvedDoseDetail, notes: draft.notes,
                 colorName: draft.color.rawValue, schedule: schedule,
                 pillsRemaining: draft.resolvedPills, refillThreshold: draft.resolvedThreshold,
                 importance: draft.importance, form: form,
@@ -639,7 +651,7 @@ struct MedicationEditor: View {
             )
         } else {
             store.add(
-                name: draft.name, doseDetail: draft.resolvedDoseDetail, notes: draft.notes,
+                name: draft.trimmedName, doseDetail: draft.resolvedDoseDetail, notes: draft.notes,
                 colorName: draft.color.rawValue, schedule: schedule,
                 pillsRemaining: draft.resolvedPills, refillThreshold: draft.resolvedThreshold,
                 importance: draft.importance, form: form,
@@ -1067,7 +1079,78 @@ private struct TimeWheelSheet: View {
             }
         }
         .onAppear {
-            picked = time.date(on: .now, calendar: .current) ?? .now
+            // Not `?? .now`: on the morning the clocks jump forward a 02:30
+            // dose has no instant that day, and falling back to the current
+            // time showed a value the user never set — which the next touch
+            // would then commit.
+            picked = time.nextValidDate()
         }
+    }
+}
+
+// MARK: - Editor chip
+
+/// The one capsule every inline value wears — unit, time, date. One font,
+/// one padding, one fill, so the sheet reads as a single surface instead of
+/// a patchwork of system and custom controls. `highlighted` marks the
+/// unset invitation state ("unit") in the accent.
+private struct EditorChip: View {
+    let text: String
+    var highlighted = false
+
+    var body: some View {
+        Text(text)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(highlighted ? Theme.accent : .primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 3)
+            .background(Color(.tertiarySystemFill), in: .capsule)
+    }
+}
+
+// MARK: - Calendar sheet
+
+/// The date counterpart of the time wheel: Apple's graphical calendar —
+/// big day numbers, swipe between months — that stays open until the green
+/// ✓ says done. Same grammar as every sheet in the app: ✕ cancels, ✓
+/// confirms.
+private struct DateCalendarSheet: View {
+    let title: String
+    @Binding var date: Date
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var picked = Date()
+
+    var body: some View {
+        NavigationStack {
+            DatePicker(
+                title,
+                selection: $picked,
+                displayedComponents: .date
+            )
+            .datePickerStyle(.graphical)
+            .labelsHidden()
+            .padding(.horizontal)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        date = picked
+                        Haptics.success()
+                        dismiss()
+                    } label: {
+                        Image(systemName: "checkmark")
+                            .font(.body.weight(.bold))
+                    }
+                    .prominentButton()
+                    .tint(Theme.taken)
+                    .accessibilityLabel(String(localized: "Confirm date"))
+                }
+            }
+        }
+        .onAppear { picked = date }
     }
 }
