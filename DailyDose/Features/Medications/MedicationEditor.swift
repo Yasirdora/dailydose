@@ -146,7 +146,10 @@ struct MedicationEditor: View {
                 TimeWheelSheet(time: time) { picked in
                     draft.replace(time, with: picked)
                 }
-                .presentationDetents([.medium])
+                // A content-fitted sheet, the way Apple's own small sheets
+                // hug what they hold: title bar + wheel + safe area, and
+                // not a point of dead air more.
+                .presentationDetents([.height(330)])
             }
             .sheet(isPresented: $isEditingStartDate) {
                 DateCalendarSheet(title: String(localized: "Starts"), date: $draft.startDate)
