@@ -103,7 +103,8 @@ struct ScanTabView: View {
         .onDisappear { autoCapture?.cancel() }
         .sheet(item: $scanned) { capture in
             MedicationEditor(
-                medication: nil, prefill: capture.label, pack: capture.pack, onSaved: onFinish
+                medication: nil, prefill: capture.label, pack: capture.pack,
+                product: capture.product, onSaved: onFinish
             )
         }
         .sheet(item: $matched) { medication in
@@ -339,10 +340,9 @@ private struct GlassCircle: ViewModifier {
 
 /// The scanner presented as a sheet from the medication editor.
 struct LabelScannerSheet: View {
-    /// Both halves of a capture: what the label said, and what the barcode did.
-    /// The barcode half is nil on a box that carries no code we can read, which
-    /// is normal — a UK pack may carry none at all.
-    let onPick: (LabelScanParser.Result, ScannedPack?) -> Void
+    /// One capture, both engines. The barcode half is nil on a box that carries
+    /// no code we can read, which is normal — a UK pack may carry none at all.
+    let onPick: (ScanCapture) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -358,7 +358,7 @@ struct LabelScannerSheet: View {
                     LabelScannerView(store: recognized) { transcript in
                         let result = LabelScanParser.parse(transcript)
                         guard !result.isEmpty else { return }
-                        onPick(result, recognized.pack)
+                        onPick(ScanCapture(label: result, pack: recognized.pack))
                         dismiss()
                     }
                     .ignoresSafeArea(edges: .bottom)
@@ -367,7 +367,10 @@ struct LabelScannerSheet: View {
                     .onChange(of: recognized.pack) { _, pack in
                         guard let pack else { return }
                         Haptics.success()
-                        onPick(recognized.bestCandidate.map(LabelScanParser.parse) ?? .empty, pack)
+                        onPick(ScanCapture(
+                            label: recognized.bestCandidate.map(LabelScanParser.parse) ?? .empty,
+                            pack: pack
+                        ))
                         dismiss()
                     }
                 } else {
@@ -399,6 +402,18 @@ struct LabelScannerSheet: View {
 struct ScanCapture: Identifiable, Equatable {
     var label: LabelScanParser.Result
     var pack: ScannedPack?
+    /// What the local FDA directory knows about this pack, when it knows it.
+    /// Nil everywhere outside the US, which is the ordinary case and the reason
+    /// the label half of this type never became optional.
+    var product: DrugDirectory.Entry?
+
+    /// Resolving happens here, once, at the moment of capture — not on every
+    /// camera frame, and not twice at two call sites.
+    init(label: LabelScanParser.Result, pack: ScannedPack?, directory: DrugDirectory? = .bundled) {
+        self.label = label
+        self.pack = pack
+        self.product = pack.flatMap { directory?.resolve($0) }
+    }
 
     /// Identity for `.sheet(item:)`. The barcode wins when there is one: it is
     /// stable frame to frame where OCR text is not.

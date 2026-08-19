@@ -14,6 +14,10 @@ struct MedicationEditor: View {
     /// It fills no field on this screen: it is stored so the *next* scan of
     /// the same pack finds this medication instead of adding another one.
     var pack: ScannedPack?
+    /// What the local FDA directory knows about that box. Fills the name,
+    /// strength and form — deterministically, from a code with a check digit,
+    /// which is why it outranks anything the camera read off the label.
+    var product: DrugDirectory.Entry?
     var onSaved: (() -> Void)?
 
     @Environment(\.doseStore) private var store
@@ -102,7 +106,9 @@ struct MedicationEditor: View {
             .task {
                 guard !didLoad else { return }
                 didLoad = true
-                draft = MedicationDraft(medication: medication, prefill: prefill, pack: pack)
+                draft = MedicationDraft(
+                    medication: medication, prefill: prefill, pack: pack, product: product
+                )
                 // Editing a medication that already has notes or custom
                 // reminders opens with those sections expanded — the screen
                 // should reflect what is configured, not hide it. (Supply
@@ -116,9 +122,10 @@ struct MedicationEditor: View {
             .sheet(item: $route) { route in
                 switch route {
                 case .scanner:
-                    LabelScannerSheet { result, scannedPack in
-                        draft.apply(result)
-                        if let scannedPack { draft.apply(scannedPack) }
+                    LabelScannerSheet { capture in
+                        draft.apply(capture.label)
+                        if let pack = capture.pack { draft.apply(pack) }
+                        if let product = capture.product { draft.apply(product) }
                         Haptics.success()
                     }
                 case .frequency:
@@ -1075,7 +1082,10 @@ private struct TimeWheelSheet: View {
             )
             .datePickerStyle(.wheel)
             .labelsHidden()
-            .frame(maxHeight: .infinity)
+            // Pinned to the sheet's top: a bottom-anchored sheet can never
+            // float mid-screen, but a wheel seated just under the title
+            // reads as high as the presentation allows.
+            .frame(maxHeight: .infinity, alignment: .top)
             .navigationTitle(String(localized: "Choose time"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -66,6 +66,25 @@ struct NationalDrugCode: Sendable {
         self.confidence = confidence
     }
 
+    /// Splits a run of digits at a format's segment boundaries.
+    ///
+    /// The format is an argument rather than something inferred, because there
+    /// is nothing in the digits to infer it from — that is the whole problem
+    /// `NDCResolver` exists to express.
+    init?(digits: String, format: Format, confidence: Confidence) {
+        let (labeler, product, package) = format.segments
+        guard digits.count == labeler + product + package, digits.isASCIIDigits else { return nil }
+        self.init(
+            labeler: String(digits.prefix(labeler)),
+            product: String(digits.dropFirst(labeler).prefix(product)),
+            package: String(digits.suffix(package)),
+            confidence: confidence
+        )
+    }
+
+    /// The same digits with the hyphens taken out — the form a GTIN embeds.
+    var digits: String { labeler + product + package }
+
     /// `"50090-6441-0"` — the form the FDA publishes and the form we persist.
     var hyphenated: String { "\(labeler)-\(product)-\(package)" }
 

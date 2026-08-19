@@ -78,7 +78,12 @@ struct MedicationDraft: Equatable {
 
     init() {}
 
-    init(medication: Medication?, prefill: LabelScanParser.Result? = nil, pack: ScannedPack? = nil) {
+    init(
+        medication: Medication?,
+        prefill: LabelScanParser.Result? = nil,
+        pack: ScannedPack? = nil,
+        product: DrugDirectory.Entry? = nil
+    ) {
         productKey = pack?.key
         expiryDate = pack?.expiry?.day
         guard let medication else {
@@ -95,6 +100,11 @@ struct MedicationDraft: Equatable {
                     strengthUnit = prefill.strengthUnit
                 }
             }
+            // The directory speaks last, because it speaks from a check digit
+            // rather than from pixels: where it and the camera disagree about a
+            // name or a strength, the code is the one that cannot have misread
+            // a 5 as an S.
+            if let product { apply(product) }
             // Seeding is not editing: a scan that filled the field must still
             // be clearable without the free text coming back.
             didEditDose = false
@@ -105,6 +115,9 @@ struct MedicationDraft: Equatable {
         // editor to change a dose time does not.
         productKey = pack?.key ?? medication.productKey
         expiryDate = pack?.expiry?.day ?? medication.expiryDate
+        // `product` is deliberately not applied here. The user has already
+        // named this medication; a directory entry must not rewrite what they
+        // chose to call their own medicine just because they scanned a refill.
         name = medication.displayName
         doseDetail = medication.doseDetail
         notes = medication.notes
@@ -245,6 +258,28 @@ struct MedicationDraft: Equatable {
         hasCollidingTimes = updated.contains(new)
         updated.insert(new)
         times = updated
+    }
+
+    /// Folds in what the FDA directory knows about a scanned pack.
+    ///
+    /// This overwrites the name and strength the OCR guessed, and it should:
+    /// the directory was reached through a check digit, so it cannot have
+    /// misread a 5 as an S or a 0 as an O. It fills nothing it does not know —
+    /// a combination tablet has no single strength, and the field is left empty
+    /// rather than filled with the first of two.
+    mutating func apply(_ product: DrugDirectory.Entry) {
+        if !product.name.isEmpty { name = product.name }
+        if let strength = product.strength {
+            strengthText = Self.format(strength.amount)
+            strengthUnit = strength.unit
+        }
+        if let detected = product.form { form = detected }
+        // The FDA's own wording, kept when we cannot turn it into a number —
+        // "12 [hp_X]/mL" is meaningless to our strength field and perfectly
+        // meaningful to the person holding the bottle.
+        if product.strength == nil, !product.strengthText.isEmpty {
+            doseDetail = product.strengthText
+        }
     }
 
     /// Folds in what a barcode said. The key and the dates are the barcode's
