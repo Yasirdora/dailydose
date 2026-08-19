@@ -17,7 +17,7 @@ import Foundation
 /// values — from newer builds, backups, or imports — read as unspecified
 /// rather than crashing a screen that only wanted an icon.
 enum MedicationForm: String, CaseIterable, Identifiable, Sendable {
-    case pill, capsule, liquid, drops, injection, inhaler, powder, patch, other
+    case pill, capsule, liquid, topical, drops, injection, inhaler, powder, patch, other
 
     var id: String { rawValue }
 
@@ -26,6 +26,11 @@ enum MedicationForm: String, CaseIterable, Identifiable, Sendable {
         case .pill: String(localized: "Pill", comment: "Medication form")
         case .capsule: String(localized: "Capsule", comment: "Medication form")
         case .liquid: String(localized: "Liquid", comment: "Medication form")
+        // Names the two words a box is most likely to print, because someone
+        // holding a tube of Voltaren should not have to decide whether "gel"
+        // counts as a cream. "Topical" is the accurate word and the wrong one:
+        // it is the term a pharmacist uses, not the one on the label.
+        case .topical: String(localized: "Cream or ointment", comment: "Medication form")
         case .drops: String(localized: "Drops", comment: "Medication form")
         case .injection: String(localized: "Injection", comment: "Medication form")
         case .inhaler: String(localized: "Inhaler", comment: "Medication form")
@@ -43,6 +48,14 @@ enum MedicationForm: String, CaseIterable, Identifiable, Sendable {
         case .pill: "pill.fill"
         case .capsule: "capsule.fill"
         case .liquid: "waterbottle.fill"
+        // Interim. SF Symbols has no tube, jar or ointment glyph — the whole
+        // catalogue was searched — and every alternative either collides with
+        // a form already here (`drop.fill` is drops, `bandage.fill` is patch)
+        // or is not available filled. A brush at least says *applied to a
+        // surface*, which is the one thing every topical has in common. A
+        // custom symbol drawn in the SF Symbols app is the real answer; this
+        // is what ships until someone draws it.
+        case .topical: "paintbrush.fill"
         case .drops: "drop.fill"
         case .injection: "syringe.fill"
         case .inhaler: "inhaler.fill"
@@ -63,6 +76,11 @@ enum MedicationForm: String, CaseIterable, Identifiable, Sendable {
             count == 1 ? String(localized: "capsule") : String(localized: "capsules")
         case .liquid:
             String(localized: "mL")
+        case .topical:
+            // Not mL. A tube is sold by weight and used by the smear, so
+            // millilitres would be a unit the pack never mentions attached to
+            // a number the user never measured.
+            count == 1 ? String(localized: "application") : String(localized: "applications")
         case .drops:
             count == 1 ? String(localized: "drop") : String(localized: "drops")
         case .injection:
@@ -91,6 +109,13 @@ enum MedicationForm: String, CaseIterable, Identifiable, Sendable {
     /// certain is said. A nil here means "ask the user" — never "assume pill".
     /// Order matters: the more specific word wins ("ophthalmic drops" is
     /// drops, not liquid; "transdermal patch" is a patch).
+    ///
+    /// `.topical` sits above `.liquid` and takes cream, ointment, gel and
+    /// lotion with it. Those four used to land on `.liquid`, which put a water
+    /// bottle on the tile and counted a 30 g tube of hydrocortisone in
+    /// millilitres — 16,610 products in the FDA directory, all of them told the
+    /// same small lie. It stays *below* `.capsule`, because "gel" is a
+    /// substring of "softgel" and a gel capsule is swallowed, not rubbed in.
     static func detect(in text: String) -> MedicationForm? {
         let flat = text.lowercased()
         guard !flat.isEmpty else { return nil }
@@ -99,9 +124,10 @@ enum MedicationForm: String, CaseIterable, Identifiable, Sendable {
             (.injection, ["injection", "injectable", "syringe", "vial", "ampoule"]),
             (.inhaler, ["inhaler", "inhalation", "aerosol", "puffer"]),
             (.drops, ["drop"]),
-            (.capsule, ["capsule", "caplet"]),
+            (.capsule, ["capsule", "caplet", "softgel", "gelcap"]),
             (.powder, ["powder", "sachet", "granule"]),
-            (.liquid, ["syrup", "suspension", "solution", "liquid", "elixir", "spray", "cream", "ointment", "gel", "lotion"]),
+            (.topical, ["cream", "ointment", "gel", "lotion", "balm", "salve"]),
+            (.liquid, ["syrup", "suspension", "solution", "liquid", "elixir", "spray"]),
             (.pill, ["tablet", "pill", "tabs"]),
         ]
         for (form, keywords) in table {

@@ -41,6 +41,41 @@ struct MedicationFormTests {
         #expect(MedicationForm.liquid.supplyUnit(count: 150) == "mL")
         #expect(MedicationForm.injection.supplyUnit(count: 1) == "dose")
         #expect(MedicationForm.supplyUnit(form: nil, count: 3) == "doses")
+        // A tube is sold by weight and used by the smear. Counting it in
+        // millilitres would attach a unit the pack never mentions to a number
+        // the user never measured.
+        #expect(MedicationForm.topical.supplyUnit(count: 1) == "application")
+        #expect(MedicationForm.topical.supplyUnit(count: 4) == "applications")
+        #expect(MedicationForm.topical.supplyUnit(count: 30) != "mL")
+    }
+
+    /// Cream, ointment, gel and lotion used to detect as `.liquid`, which put
+    /// a water bottle on the tile and counted a 30 g tube in millilitres. In
+    /// the FDA directory that is 16,610 products telling the same small lie.
+    @Test("Topicals are their own form, not liquids")
+    func topicalsAreNotLiquids() {
+        #expect(MedicationForm.detect(in: "Hydrocortisone 1% cream") == .topical)
+        #expect(MedicationForm.detect(in: "Fucidin ointment") == .topical)
+        #expect(MedicationForm.detect(in: "Voltaren gel 2.32%") == .topical)
+        #expect(MedicationForm.detect(in: "Calamine lotion") == .topical)
+        #expect(MedicationForm.detect(in: "Lip balm") == .topical)
+
+        // And the liquids they were confused with stay liquids.
+        #expect(MedicationForm.detect(in: "Lactulose oral solution") == .liquid)
+        #expect(MedicationForm.detect(in: "Amoxicillin suspension") == .liquid)
+        #expect(MedicationForm.detect(in: "Nasal spray") == .liquid)
+    }
+
+    /// "gel" is a substring of "softgel", and a gel capsule is swallowed
+    /// rather than rubbed in — so `.capsule` has to win. This is the trap the
+    /// topical keywords introduced, pinned so a later reorder trips on it.
+    @Test("A softgel is a capsule, not a cream")
+    func gelSubstringDoesNotStealCapsules() {
+        #expect(MedicationForm.detect(in: "Omega-3 softgel") == .capsule)
+        #expect(MedicationForm.detect(in: "Vitamin D gelcap") == .capsule)
+        #expect(MedicationForm.detect(in: "Ibuprofen liquid filled capsule") == .capsule)
+        // Eye gel is still drops: `.drops` outranks both.
+        #expect(MedicationForm.detect(in: "Carbomer eye gel drops") == .drops)
     }
 
     /// Detection fires only on words a label actually prints. The moment
