@@ -126,6 +126,35 @@ struct HRIParserTests {
 
     /// Malformed input is the normal case when a camera is involved. Every one
     /// of these must be nil, and none may crash.
+    /// AI (30) is the item count, and it is the one number on the whole carton
+    /// that the manufacturer *stated* rather than one we read off the printed
+    /// front. Rare on a medicine pack, and worth taking when it is there.
+    @Test("A stated item count is read")
+    func itemCount() throws {
+        let pack = try #require(HRI.read("(01)05437654786045(17)210212(30)0030"))
+        #expect(pack.count == 30)
+    }
+
+    @Test("A pack that states no count says so")
+    func noItemCount() throws {
+        #expect(try #require(HRI.read(HRI.devicePack)).count == nil)
+    }
+
+    /// Every other field is fatal when it fails to validate: a GTIN or an
+    /// expiry that does not check out is a *misread*, and softening a misread
+    /// into a missing field is how a reading of the wrong box comes back
+    /// looking like a reading of no box. The count is the exception, because
+    /// it is the one field nothing depends on — losing the pack's identity and
+    /// its expiry date to salvage an item count would be exactly the wrong
+    /// trade.
+    @Test("A garbled count does not cost the reading its identity")
+    func garbledCountIsTolerated() throws {
+        let pack = try #require(HRI.read("(01)05437654786045(30)3O(17)210212"))
+        #expect(pack.gtin?.value == "05437654786045")
+        #expect(pack.count == nil)
+        #expect(pack.expiry != nil)
+    }
+
     @Test("Malformed transcriptions are refused rather than half-read")
     func malformed() {
         let cases: [(String, String)] = [

@@ -92,7 +92,12 @@ enum HRIParser {
             // A repeated identifier is two answers to one question — two expiry
             // dates, two batch numbers — with nothing to choose between them.
             guard seen.insert(ai).inserted else { return nil }
-            guard let element = GS1Parser.validate(ai: ai, value: value) else { return nil }
+            guard let element = GS1Parser.validate(ai: ai, value: value) else {
+                // A field nothing depends on does not get to veto a reading
+                // that is otherwise sound — see `GS1Parser.isTolerated`.
+                if GS1Parser.isTolerated(ai) { continue }
+                return nil
+            }
             elements.append(element)
         }
 
@@ -130,9 +135,13 @@ enum HRIParser {
 
         guard let key = preferredKey(ndc: ndc, pzn: pzn, gtin: gtin) else { return nil }
 
+        // AI (30), the item count. `validate` has already guaranteed 1…8
+        // digits, so a nil here is an absent field rather than a bad one.
+        let count = value("30").flatMap(Int.init)
+
         return ScannedPack(
             key: key, gtin: gtin, pzn: pzn, ndc: ndc,
-            batch: value("10"), expiry: expiry
+            batch: value("10"), expiry: expiry, count: count
         )
     }
 

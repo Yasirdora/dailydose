@@ -57,6 +57,22 @@ struct MedicationDraft: Equatable {
     var pillsRemaining: Int?
     var refillThreshold: Int?
 
+    /// The supply count a scan last wrote, if one did.
+    ///
+    /// Two jobs, and neither needs a second flag. It lets the editor say the
+    /// number came off the pack rather than out of the user's head — a count
+    /// read from a carton is worth checking before it starts driving refill
+    /// warnings. And it makes "has the user touched this?" decidable: a count
+    /// still equal to what the last scan wrote is the scan's to replace,
+    /// anything else is theirs to keep.
+    private(set) var scannedSupplyCount: Int?
+
+    /// Whether the count on screen is the one a scan read and the user has not
+    /// changed.
+    var hasScannedSupplyCount: Bool {
+        scannedSupplyCount != nil && pillsRemaining == scannedSupplyCount
+    }
+
     /// How much this medication may interrupt. Defaults to standard, so the
     /// common case needs no decision from the user.
     var importance: MedicationImportance = .standard
@@ -98,7 +114,13 @@ struct MedicationDraft: Equatable {
                     strengthText = Self.format(amount)
                     strengthUnit = prefill.strengthUnit
                 }
+                // And "30 Tabletten" pre-fills the supply count, which nothing
+                // in the scan path used to touch at all.
+                if let quantity = prefill.quantity { adoptScannedSupply(quantity) }
             }
+            // Stated beats inferred: AI (30) is a count the manufacturer
+            // encoded, where the label's is one we read off the front.
+            if let stated = pack?.count { adoptScannedSupply(stated) }
             // Seeding is not editing: a scan that filled the field must still
             // be clearable without the free text coming back.
             didEditDose = false
@@ -203,12 +225,14 @@ struct MedicationDraft: Equatable {
         return endDate < Calendar.current.startOfDay(for: startDate)
     }
 
-    /// Tracking supply with the count left blank.
+    /// Tracking supply with nothing ever captured or typed.
     ///
     /// An empty field is `nil`, and `nil` used to persist as `0` — which made
     /// `0 <= 0` true and fired a refill alert on a box the user had just
     /// filled. The warning level may stay blank (it means "don't warn me");
-    /// the count cannot, because tracking supply without one is meaningless.
+    /// the count cannot, because asking to be warned about a supply nobody has
+    /// stated is meaningless. It fires only when the user wants warnings and
+    /// there is no number at all — never merely because tracking is off.
     var isMissingSupplyCount: Bool { tracksSupply && pillsRemaining == nil }
 
     var refillThresholdExceedsSupply: Bool {
@@ -216,19 +240,30 @@ struct MedicationDraft: Equatable {
         return threshold > remaining
     }
 
-    /// Supply values are only stored when tracking is on, and are clamped to a
-    /// sane range so a typo can't put the counter into a state the UI can't
-    /// represent.
+    /// How many are on hand, clamped to a sane range so a typo can't put the
+    /// counter into a state the UI can't represent.
     ///
-    /// An empty field resolves to `nil`, never `0`. Coercing it to zero is how
-    /// a brand-new medication arrived already low on supply.
+    /// **Not gated on `tracksSupply`, and that is the fix.** The count and the
+    /// toggle are different kinds of thing that were treated as one: the count
+    /// is an *observation* — what the pack says, read off a carton or typed by
+    /// the user — and the toggle is a *preference*, whether they want to be
+    /// warned. Gating the observation on the preference meant a scan that read
+    /// "90" while tracking happened to be off discarded the 90 at save, and
+    /// switching tracking on afterwards started from an empty field.
+    ///
+    /// An empty field still resolves to `nil`, never `0`. Coercing it to zero
+    /// is how a brand-new medication arrived already low on supply.
     var resolvedPills: Int? {
-        guard tracksSupply, let pillsRemaining else { return nil }
+        guard let pillsRemaining else { return nil }
         return max(0, min(pillsRemaining, 9999))
     }
 
+    /// The warning level, which *is* the preference and stays gated.
+    ///
     /// Blank means "don't warn me" — `isLowOnSupply` needs both values, so a
-    /// nil threshold simply never triggers.
+    /// nil threshold simply never triggers. Turning tracking off therefore
+    /// stops the warnings without throwing the count away, which is the whole
+    /// point of the split.
     var resolvedThreshold: Int? {
         guard tracksSupply, let refillThreshold else { return nil }
         return max(0, min(refillThreshold, 9999))
@@ -282,9 +317,46 @@ struct MedicationDraft: Equatable {
     /// Folds in what a barcode said. The key and the dates are the barcode's
     /// to state — nothing on the label can contradict them, and nothing the
     /// user typed is overwritten by them.
+    /// Folds in one capture — what the label said, then what the pack's own
+    /// code said.
+    ///
+    /// One entry point rather than two calls at every site, because the order
+    /// is load-bearing: AI (30) is a count the manufacturer *stated*, the
+    /// label's is one we *inferred*, and the stated one has to arrive second
+    /// to win.
+    mutating func apply(_ capture: ScanCapture) {
+        apply(capture.label)
+        if let pack = capture.pack { apply(pack) }
+    }
+
+    /// Whether a supply count exists at all, whatever the tracking preference
+    /// says. Lets the editor reveal a number that was captured while tracking
+    /// was off rather than presenting an empty field.
+    var hasSupplyCount: Bool { pillsRemaining != nil }
+
     mutating func apply(_ pack: ScannedPack) {
         productKey = pack.key
         if let expiry = pack.expiry { expiryDate = expiry.day }
+        if let stated = pack.count { adoptScannedSupply(stated) }
+    }
+
+    /// Takes a supply count a scan read — unless the user has one of their own.
+    ///
+    /// A scan filling a blank field is help; a scan replacing a number someone
+    /// typed is the app overruling them about their own medicine cabinet. The
+    /// same rule `form` already follows.
+    ///
+    /// The count is recorded whatever `tracksSupply` says, because it is an
+    /// observation rather than a preference — see ``resolvedPills``. Switching
+    /// tracking on is a convenience on top of that, not the thing that makes
+    /// the number exist.
+    private mutating func adoptScannedSupply(_ count: Int) {
+        guard pillsRemaining == nil || pillsRemaining == scannedSupplyCount else { return }
+        pillsRemaining = count
+        scannedSupplyCount = count
+        // Reading a count off the box is also the answer to "do you want to
+        // track this?" — the number is already there to be tracked.
+        tracksSupply = true
     }
 
     mutating func apply(_ result: LabelScanParser.Result) {
@@ -296,6 +368,7 @@ struct MedicationDraft: Equatable {
         }
         // A scan never overrules a form the user already chose.
         if form == nil, let detected = result.detectedForm { form = detected }
+        if let quantity = result.quantity { adoptScannedSupply(quantity) }
     }
 
     /// The form the entry itself declares, for when the user never opened the

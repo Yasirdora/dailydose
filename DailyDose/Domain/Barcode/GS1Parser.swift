@@ -29,6 +29,15 @@ enum GS1Parser {
         "17": 6,    // Expiry, YYMMDD
     ]
 
+    /// AIs whose value is a variable number of digits, up to this many.
+    ///
+    /// Only one, and it earns its place: AI (30) is the *count of items* in the
+    /// pack, stated by the manufacturer. Where the OCR reads "30 Tabletten" off
+    /// the front of a box and infers a count, this is the count.
+    private static let variableNumeric: [String: Int] = [
+        "30": 8,    // Count of items
+    ]
+
     /// AIs whose value is 1…20 characters of GS1 CSET-82.
     private static let variableLength: Set<String> = [
         "10",   // Batch / lot
@@ -40,8 +49,19 @@ enum GS1Parser {
     private static let maximumVariableLength = 20
 
     static func isKnown(_ ai: String) -> Bool {
-        fixedLength[ai] != nil || variableLength.contains(ai)
+        fixedLength[ai] != nil || variableNumeric[ai] != nil || variableLength.contains(ai)
     }
+
+    /// Whether a value that fails ``validate(ai:value:)`` may simply be dropped
+    /// instead of rejecting the whole reading.
+    ///
+    /// The default is fatal, and it should be: a GTIN or an expiry that does
+    /// not check out is a *misread*, and softening a misread into a missing
+    /// field is how a reading of the wrong box comes back looking like a
+    /// reading of no box. AI (30) is the exception because it is the one field
+    /// nothing depends on — losing the pack's identity and its expiry date to
+    /// salvage an item count would be exactly the wrong trade.
+    static func isTolerated(_ ai: String) -> Bool { ai == "30" }
 
     /// An element, or nil when the value cannot be what its AI promises.
     ///
@@ -52,6 +72,10 @@ enum GS1Parser {
     static func validate(ai: String, value: String) -> Element? {
         if let length = fixedLength[ai] {
             guard value.count == length, value.isASCIIDigits else { return nil }
+            return Element(ai: ai, value: value)
+        }
+        if let maximum = variableNumeric[ai] {
+            guard !value.isEmpty, value.count <= maximum, value.isASCIIDigits else { return nil }
             return Element(ai: ai, value: value)
         }
         guard variableLength.contains(ai) else { return nil }

@@ -20,8 +20,15 @@ enum LabelScanParser {
         /// when the label said nothing certain. A suggestion to confirm,
         /// never a fact to impose.
         var detectedForm: MedicationForm?
+        /// How many the pack holds, when the carton printed a count — "30
+        /// Tabletten", "3 x 10", "200 Hub". Nil far more often than not, and
+        /// that is the intended behaviour: see ``PackQuantity``.
+        var quantity: Int?
 
-        static let empty = Result(name: "", strength: "", strengthAmount: nil, strengthUnit: nil, detectedForm: nil)
+        static let empty = Result(
+            name: "", strength: "", strengthAmount: nil, strengthUnit: nil,
+            detectedForm: nil, quantity: nil
+        )
         var isEmpty: Bool { name.isEmpty && strength.isEmpty }
     }
 
@@ -58,6 +65,49 @@ enum LabelScanParser {
         "weight", "tablet", "tablets", "capsule", "capsules", "ml", "mg",
     ]
 
+    /// Words that appear on a carton in type as large as the name, and are
+    /// never the name.
+    ///
+    /// Ranking name candidates by printed size is a real improvement over
+    /// ranking them by length — but the biggest words on a box are not always
+    /// the medicine. "GEBRAUCHSINFORMATION" is set in display type on the
+    /// leaflet flap, and a dispensing label puts the pharmacy's own headings in
+    /// bold. Without this the size heuristic just swaps one wrong answer for
+    /// another, and a wrong name pre-filled is a trap the user saves without
+    /// re-reading.
+    private static let nonNameWords: Set<String> = [
+        // German — leaflet, prescription status, batch and date headings
+        "gebrauchsinformation", "gebrauchsanweisung", "packungsbeilage", "beipackzettel",
+        "rezeptpflichtig", "apothekenpflichtig", "verschreibungspflichtig",
+        "chargenbezeichnung", "charge", "hersteller", "pharmazeutischer", "unternehmer",
+        // English
+        "lot", "exp", "expiry", "expires", "mfg", "mfd", "batch",
+    ]
+
+    /// Phrases the same applies to, matched on the folded text because they
+    /// are several words and punctuated inconsistently.
+    private static let nonNamePhrases: [String] = [
+        "keep out of reach", "out of the reach", "keep away from children",
+        "store below", "store at", "store in", "protect from light",
+        "read the leaflet", "for oral use", "not to be taken",
+        "ch.-b", "verw. bis", "fur kinder unzuganglich",
+    ]
+
+    /// Whether a fragment could be a medication's name at all.
+    ///
+    /// Used both to resolve the name and to *rank* candidates, so a boilerplate
+    /// line set in big type never wins on size alone.
+    static func couldBeName(_ text: String) -> Bool {
+        // A prescription record is never a medicine's name, and this is the one
+        // choke point every path to the name field passes through.
+        guard !DispensingLabel.isPrivate(text) else { return false }
+        guard !isBoilerplate(text), !HRIParser.isTranscription(text) else { return false }
+        let folded = CartonText.fold(text.singleLine)
+        if nonNamePhrases.contains(where: folded.contains) { return false }
+        let words = Set(folded.split(whereSeparator: { !$0.isLetter }).map(String.init))
+        return words.isDisjoint(with: nonNameWords)
+    }
+
     private static func isBoilerplate(_ text: String) -> Bool {
         let words = text.lowercased()
             .split(whereSeparator: { !$0.isLetter })
@@ -76,7 +126,7 @@ enum LabelScanParser {
     /// going to catch this; the shape does. What that text *is* good for is
     /// `HRIParser`, which reads the identity and the dates straight out of it.
     private static func resolvedName(_ candidate: String) -> String {
-        if isBoilerplate(candidate) || HRIParser.isTranscription(candidate) { return "" }
+        guard couldBeName(candidate) else { return "" }
         return prettifyName(candidate)
     }
 
@@ -86,21 +136,75 @@ enum LabelScanParser {
         return strengthRegex.firstMatch(in: flat, range: NSRange(flat.startIndex..., in: flat)) != nil
     }
 
-    static func parse(_ raw: String) -> Result {
+    /// Reads a whole label — every printed line the camera could see, in
+    /// reading order.
+    ///
+    /// The entry point that knows what *kind* of document it is looking at. A
+    /// carton names a product and a dispensing label records a transaction, and
+    /// the difference is not cosmetic: on a label the name comes from one
+    /// regular line and nowhere else, because the largest text on it is
+    /// routinely the patient's.
+    ///
+    /// Redaction happens here, first, before anything is ranked or parsed —
+    /// which is the requirement, not an implementation detail. A filter applied
+    /// to the winner would mean a patient's name had already competed for the
+    /// medication name field and merely lost.
+    static func read(_ lines: [String]) -> Result {
+        let visible = DispensingLabel.redacted(lines)
+        guard !visible.isEmpty else { return .empty }
+        let source: String? = DispensingLabel.isDispensingLabel(visible)
+            ? DispensingLabel.drugLine(in: visible)
+            : visible.first(where: containsStrength) ?? visible.first(where: couldBeName)
+        return parse(source ?? "", context: visible.joined(separator: "\n"))
+    }
+
+    /// The same, for text that already carries its own line breaks.
+    static func read(_ text: String) -> Result {
+        read(text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty })
+    }
+
+    /// Reads one captured fragment, in the light of the rest of the carton.
+    ///
+    /// `context` is everything else the camera could see. It exists because a
+    /// carton does not print its facts on one line: the name and the strength
+    /// share the front panel, but "Filmtabletten" and "30 Stück" are set
+    /// somewhere else entirely, and the shutter captures a single fragment.
+    /// Reading only that fragment is why a scanned pack arrived with its name
+    /// and strength filled in and Form still saying "Choose".
+    ///
+    /// The split is deliberate and it matters: **name and strength are read
+    /// from `raw` alone**, because those two are claims about *this* piece of
+    /// text and pulling them from anywhere in frame is how a scan picks up the
+    /// pharmacy's address. Form and quantity are read from the whole carton,
+    /// because they are claims about the box.
+    static func parse(_ raw: String, context: String = "") -> Result {
         // OCR fragments arrive as vertical stacks; flatten before matching so a
         // label reading "PANADOL / EACH TABLET / CONTAINS" becomes one string.
         let text = raw.singleLine
-        guard !text.isEmpty else { return .empty }
+        // Joined with a line break, not a space: each fragment is one printed
+        // line, and ``CartonText`` reads a quantity only where the number and
+        // its noun share one. Flattening them is how "Ibuprofen AL 400" over
+        // "Filmtabletten" becomes a pack of four hundred.
+        let carton = context.isEmpty ? raw : raw + "\n" + context
+        guard !carton.isEmpty else { return .empty }
         // The whole label is scanned for form words, not just the part near
         // the strength — "EACH TABLET CONTAINS" declares the form as surely
         // as "500 mg tablets" does.
-        let detectedForm = MedicationForm.detect(in: text)
+        let detectedForm = MedicationForm.detect(in: carton)
+        // One lexicon answers both questions, so the count and the form can
+        // never be read off the same printed word and disagree about it.
+        let quantity = PackQuantity.read(carton)?.count
 
         guard let strengthRegex,
               let match = strengthRegex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range, in: text)
         else {
-            return Result(name: resolvedName(text), strength: "", strengthAmount: nil, strengthUnit: nil, detectedForm: detectedForm)
+            return Result(
+                name: resolvedName(text), strength: "", strengthAmount: nil,
+                strengthUnit: nil, detectedForm: detectedForm, quantity: quantity
+            )
         }
 
         var strength = String(text[range])
@@ -133,7 +237,8 @@ enum LabelScanParser {
             strength: normalizeStrength(strength),
             strengthAmount: strengthAmount,
             strengthUnit: strengthUnit,
-            detectedForm: detectedForm
+            detectedForm: detectedForm,
+            quantity: quantity
         )
     }
 

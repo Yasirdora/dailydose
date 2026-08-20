@@ -21,4 +21,10 @@ struct ScannedPack: Equatable, Sendable {
     /// "tidying" the case would make a recall check quietly wrong.
     let batch: String?
     let expiry: ExpiryDate?
+    /// How many the pack holds, as the manufacturer encoded it — GS1 AI (30).
+    ///
+    /// Rarely present on a medicine pack, and worth reading when it is: it is
+    /// the one count on the whole carton that is stated rather than inferred,
+    /// so it outranks anything the OCR reads off the printed front.
+    let count: Int?
 }

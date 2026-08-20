@@ -459,14 +459,25 @@ struct MedicationDraftTests {
         #expect(draft.times.count == 1)
     }
 
-    @Test("Supply values are only stored when tracking is on")
-    func supplyIsGatedByToggle() {
+    /// The count and the toggle are different kinds of thing, and treating
+    /// them as one lost data: a scan that read "90" while tracking happened to
+    /// be off discarded the 90 at save, and switching tracking on afterwards
+    /// started from an empty field.
+    ///
+    /// The count is an **observation** — what the pack says, or what the user
+    /// typed — and is kept whatever the toggle says. The warning level is the
+    /// **preference**, and stays gated: turning tracking off is how someone
+    /// says "don't warn me", and it must do that without throwing away the
+    /// number they have.
+    @Test("The count is kept whatever the toggle says; the warning level is not")
+    func supplyCountIsNotGatedByTheToggle() {
         var draft = MedicationDraft()
         draft.name = "Metformin"
         draft.pillsRemaining = 30
         draft.refillThreshold = 5
 
-        #expect(draft.resolvedPills == nil, "Tracking is off — nothing should be stored")
+        #expect(draft.resolvedPills == 30, "the count is an observation, not a preference")
+        #expect(draft.resolvedThreshold == nil, "no warnings asked for, so no warning level")
 
         draft.tracksSupply = true
         #expect(draft.resolvedPills == 30)
@@ -589,10 +600,12 @@ struct MedicationFormSafetyTests {
         #expect(counted.resolvedPills == 30)
         #expect(counted.resolvedThreshold == nil)
 
-        // And tracking off stores neither, whatever is left in the fields.
+        // Tracking off keeps the count and drops the warning level. The count
+        // is what the pack says; the warning level is what the user asked for,
+        // and they have just asked for none.
         let off = draft { $0.tracksSupply = false; $0.pillsRemaining = 30; $0.refillThreshold = 5 }
         #expect(off.isValid)
-        #expect(off.resolvedPills == nil)
+        #expect(off.resolvedPills == 30)
         #expect(off.resolvedThreshold == nil)
     }
 

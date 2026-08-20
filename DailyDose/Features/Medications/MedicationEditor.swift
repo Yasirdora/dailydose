@@ -149,8 +149,7 @@ struct MedicationEditor: View {
                 switch route {
                 case .scanner:
                     LabelScannerSheet { capture in
-                        draft.apply(capture.label)
-                        if let pack = capture.pack { draft.apply(pack) }
+                        draft.apply(capture)
                         Haptics.success()
                     }
                 case .frequency:
@@ -525,8 +524,11 @@ struct MedicationEditor: View {
             .onChange(of: draft.tracksSupply) { _, isOn in
                 // The count is the field that unblocks Save, so it takes the
                 // keyboard the moment tracking is switched on — and gives it
-                // back when tracking is switched off.
-                isSupplyCountFocused = isOn
+                // back when tracking is switched off. Not when a scan turned
+                // tracking on, though: the number is already filled in, there
+                // is nothing to type, and the keyboard would cover the very
+                // figure we want the user to check.
+                isSupplyCountFocused = isOn && draft.pillsRemaining == nil
             }
             if draft.tracksSupply {
                 rowDivider
@@ -692,6 +694,14 @@ struct MedicationEditor: View {
         if draft.tracksSupply, draft.refillThresholdExceedsSupply {
             return Text(String(localized: "The warning level is higher than what you have — you'll be alerted right away."))
                 .foregroundStyle(Theme.due)
+        }
+        // Below the warnings, never instead of one. A count that came off a
+        // carton is worth a second look before it starts driving refill
+        // alerts — the OCR reads "30" off a box that may have said "3 x 10",
+        // and the user is holding the box.
+        if draft.hasScannedSupplyCount {
+            return Text(String(localized: "Read from the pack — check it before saving."))
+                .foregroundStyle(.secondary)
         }
         return Text(String(localized: "Optional. Daily Dose counts down as you log doses and warns you before you run out."))
             .foregroundStyle(.secondary)

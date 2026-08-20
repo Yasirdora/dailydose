@@ -107,32 +107,15 @@ enum MedicationForm: String, CaseIterable, Identifiable, Sendable {
     /// Deliberately conservative: it only fires on explicit form words
     /// ("tablets", "inhaler", "eye drops") and returns nil the moment nothing
     /// certain is said. A nil here means "ask the user" — never "assume pill".
-    /// Order matters: the more specific word wins ("ophthalmic drops" is
-    /// drops, not liquid; "transdermal patch" is a patch).
     ///
-    /// `.topical` sits above `.liquid` and takes cream, ointment, gel and
-    /// lotion with it. Those four used to land on `.liquid`, which put a water
-    /// bottle on the tile and counted a 30 g tube of hydrocortisone in
-    /// millilitres — 16,610 products in the FDA directory, all of them told the
-    /// same small lie. It stays *below* `.capsule`, because "gel" is a
-    /// substring of "softgel" and a gel capsule is swallowed, not rubbed in.
+    /// The words themselves live in ``PackagingLexicon``, not here, and that is
+    /// the point: the same table decides what "30 Filmtabletten" *counts*, so a
+    /// carton can never be read as thirty pills and pictured as a bottle. The
+    /// old private list here matched with `contains`, which found "gel" inside
+    /// "softgel" and "drop" inside anything; the lexicon matches whole printed
+    /// words, and compounds only where a word is long enough for that to be
+    /// safe.
     static func detect(in text: String) -> MedicationForm? {
-        let flat = text.lowercased()
-        guard !flat.isEmpty else { return nil }
-        let table: [(MedicationForm, [String])] = [
-            (.patch, ["patch", "transdermal"]),
-            (.injection, ["injection", "injectable", "syringe", "vial", "ampoule"]),
-            (.inhaler, ["inhaler", "inhalation", "aerosol", "puffer"]),
-            (.drops, ["drop"]),
-            (.capsule, ["capsule", "caplet", "softgel", "gelcap"]),
-            (.powder, ["powder", "sachet", "granule"]),
-            (.topical, ["cream", "ointment", "gel", "lotion", "balm", "salve"]),
-            (.liquid, ["syrup", "suspension", "solution", "liquid", "elixir", "spray"]),
-            (.pill, ["tablet", "pill", "tabs"]),
-        ]
-        for (form, keywords) in table {
-            if keywords.contains(where: { flat.contains($0) }) { return form }
-        }
-        return nil
+        PackagingLexicon.form(in: text)
     }
 }

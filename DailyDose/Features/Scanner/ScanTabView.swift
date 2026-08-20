@@ -158,9 +158,15 @@ struct ScanTabView: View {
                         if !recognized.hasCandidate { showEmptyHint() }
                     },
                     onPick: { transcript in
+                        // A tap names its own winner, so it goes through the
+                        // same rules ranking does — see `pickable`.
+                        guard let picked = recognized.pickable(transcript) else {
+                            Haptics.warning()
+                            return
+                        }
                         autoCapture?.cancel()
                         Haptics.impact()
-                        present(transcript)
+                        present(picked)
                     }
                 )
             } else {
@@ -254,7 +260,9 @@ struct ScanTabView: View {
     /// storing the key: name it once, and every refill after that is a
     /// two-second scan with no typing and no database anywhere on earth.
     private func present(_ transcript: String) {
-        let result = LabelScanParser.parse(transcript)
+        // Everything else in frame comes with it: the form and the pack size
+        // are almost never printed on the same line as the name.
+        let result = LabelScanParser.parse(transcript, context: recognized.packagingText)
         let pack = recognized.packCandidate
         // A readable name is not required when the pack identified itself: the
         // user names it once, and the identity is what makes the next scan of
@@ -338,7 +346,10 @@ struct LabelScannerSheet: View {
             Group {
                 if authorization.state == .authorized, LabelScannerView.isSupported {
                     LabelScannerView(store: recognized) { transcript in
-                        let result = LabelScanParser.parse(transcript)
+                        guard let picked = recognized.pickable(transcript) else { return }
+                        let result = LabelScanParser.parse(
+                            picked, context: recognized.packagingText
+                        )
                         guard !result.isEmpty else { return }
                         onPick(ScanCapture(label: result, pack: recognized.packCandidate))
                         dismiss()
