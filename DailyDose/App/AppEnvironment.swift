@@ -78,6 +78,11 @@ final class AppEnvironment {
     /// Exists purely for design review and screenshots on the Simulator, where
     /// typing data in by hand is slow. Never runs in a normal launch, and never
     /// overwrites a real library.
+    ///
+    /// Compiled out of release builds entirely. A launch argument that conjures
+    /// medications is a dormant, undocumented feature in a shipped binary
+    /// (App Review 2.3.1) — and the App Store build has no honest use for it.
+#if DEBUG
     private func seedDemoDataIfRequested() {
         guard ProcessInfo.processInfo.arguments.contains("-seedDemo"),
               case .ready = status,
@@ -161,6 +166,9 @@ final class AppEnvironment {
             store.log(medicationID: panadol.id, scheduledAt: at(twoDaysAgo, TimeOfDay(hour: 22, minute: 0)!), status: .missed)
         }
     }
+#else
+    private func seedDemoDataIfRequested() {}
+#endif
 
     /// Everything that must happen whenever the app comes back to the front —
     /// and, via the background refresh task, sometimes when it doesn't.
@@ -224,7 +232,9 @@ final class AppEnvironment {
 // MARK: - Environment plumbing
 
 private struct DoseStoreKey: EnvironmentKey {
-    @MainActor static let defaultValue: DoseStore? = nil
+    // Left non-isolated: `nil` carries no state across actors, and inheriting
+    // `DoseStore`'s main-actor isolation here is a Swift 6 error for nothing.
+    static let defaultValue: DoseStore? = nil
 }
 
 extension EnvironmentValues {

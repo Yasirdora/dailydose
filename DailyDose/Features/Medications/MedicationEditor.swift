@@ -647,10 +647,10 @@ struct MedicationEditor: View {
     }
 
     private var medicationFooter: Text {
-        if draft.trimmedName.isEmpty {
-            return Text(String(localized: "Enter the medication name to continue."))
-                .foregroundStyle(Theme.due)
-        } else if draft.hasInvalidDoseNumbers {
+        // No line for a missing name. The placeholder in the field above says
+        // it, and this footer repeated the toolbar banner word for word on a
+        // sheet the user had only just opened.
+        if draft.hasInvalidDoseNumbers {
             return Text(String(localized: "Strength and amount should be numbers, like 500 or 0.5."))
                 .foregroundStyle(Theme.due)
         }
@@ -683,14 +683,10 @@ struct MedicationEditor: View {
     }
 
     private var supplyFooter: Text {
-        // Numeric fields are typed now, so "thirty" can't silently disable
-        // supply tracking the way free-text `Int(_:)` parsing did.
-        if draft.isMissingSupplyCount {
-            // A blank count used to persist as 0, and 0 <= 0 made a medication
-            // low on supply the instant it was saved.
-            return Text(String(localized: "Enter how many doses you have on hand, or turn tracking off."))
-                .foregroundStyle(Theme.due)
-        }
+        // No line for a blank count. Save stays disabled for it — a blank count
+        // used to persist as 0, and 0 <= 0 made a medication low on supply the
+        // instant it was saved — but the sentence said so twice, here and in
+        // the toolbar banner, on a card the user had only just opened.
         if draft.tracksSupply, draft.refillThresholdExceedsSupply {
             return Text(String(localized: "The warning level is higher than what you have — you'll be alerted right away."))
                 .foregroundStyle(Theme.due)

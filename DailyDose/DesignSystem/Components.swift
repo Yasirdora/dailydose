@@ -36,7 +36,10 @@ struct MedicationTile: View {
 
     @ScaledMetric(relativeTo: .headline) private var scale: CGFloat = 1
 
-    private var resolved: CGFloat { size * scale }
+    /// Grows with text, but not without limit. The tile is a colour-and-form
+    /// swatch, not content: unclamped it reaches ~144pt at AX5 and takes 40%
+    /// of an SE's width away from the medication's name.
+    private var resolved: CGFloat { min(size * scale, size * 1.75) }
 
     var body: some View {
         RoundedRectangle(cornerRadius: resolved * 0.27, style: .continuous)

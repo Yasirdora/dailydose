@@ -18,6 +18,10 @@ struct MedicationDaySheet: View {
 
     /// The row whose Taken tap opened the time wheel.
     @State private var confirmingTakenForDoseID: String?
+    /// How tall the sheet currently is. Driven, not just offered: the time
+    /// wheel is useless at the medium detent, where it opens below the fold
+    /// with its commit button off screen.
+    @State private var detent: PresentationDetent = .medium
     /// The wheel's time — seeded to *now* on the dose's own day, scrollable
     /// back to when it really happened.
     @State private var earlierTime: Date = .now
@@ -25,13 +29,25 @@ struct MedicationDaySheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
-                    hero
-                    doseList
+                ScrollViewReader { scroll in
+                    VStack(spacing: 20) {
+                        hero
+                        doseList
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
+                    // Growing the sheet is only half of it. A wheel that opens
+                    // on the fourth dose of the day is still below the fold at
+                    // .large, so the row that just changed is brought to the
+                    // user rather than left for them to find.
+                    .onChange(of: confirmingTakenForDoseID) { _, id in
+                        guard let id else { return }
+                        withAnimation(.smooth(duration: 0.3)) {
+                            scroll.scrollTo(id, anchor: .bottom)
+                        }
+                    }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
-                .padding(.bottom, 24)
             }
             .navigationTitle(day.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
             .navigationBarTitleDisplayMode(.inline)
@@ -39,7 +55,7 @@ struct MedicationDaySheet: View {
                 ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.medium, .large], selection: $detent)
     }
 
     private var day: Date { card.doses.first?.scheduledAt ?? .now }
@@ -86,7 +102,7 @@ struct MedicationDaySheet: View {
                 if dose.id != card.doses.first?.id {
                     Divider().padding(.leading, 16)
                 }
-                row(for: dose)
+                row(for: dose).id(dose.id)
             }
         }
         .background(
@@ -249,10 +265,18 @@ struct MedicationDaySheet: View {
             return
         }
         withAnimation(.smooth(duration: 0.25)) {
-            confirmingTakenForDoseID = confirmingTakenForDoseID == dose.id ? nil : dose.id
+            let opening = confirmingTakenForDoseID != dose.id
+            confirmingTakenForDoseID = opening ? dose.id : nil
             // Seed the wheel on the dose's own day — a date outside the
             // picker's range clamps it shut and the wheel won't move.
             earlierTime = mergedTime(.now, onto: dose.scheduledAt)
+            // Give the wheel room. It is a 200pt control with a commit button
+            // under it, appearing inside a row that may already be halfway
+            // down the sheet — at .medium the user has to scroll to find what
+            // their own tap just created. Staying large afterwards is
+            // deliberate: collapsing would pull the result out from under
+            // whoever is reading it.
+            if opening { detent = .large }
         }
         Haptics.select()
     }

@@ -14,7 +14,7 @@ struct DailyDoseApp: App {
     /// schedules are projected as one-shots and need periodic replenishment.
     /// Without this, someone who doesn't open the app for a week stops being
     /// reminded — silently, which is the worst way for a medication app to fail.
-    static let refreshTaskIdentifier = "com.dailydose.ios.refresh"
+    nonisolated static let refreshTaskIdentifier = "com.dailydose.ios.refresh"
 
     var body: some Scene {
         WindowGroup {
@@ -25,7 +25,7 @@ struct DailyDoseApp: App {
                 .task {
                     Haptics.prepare()
                     environment.bootstrap()
-                    scheduleBackgroundRefresh()
+                    Self.scheduleBackgroundRefresh()
                 }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -33,7 +33,7 @@ struct DailyDoseApp: App {
             case .active:
                 Task { await environment.refresh() }
             case .background:
-                scheduleBackgroundRefresh()
+                Self.scheduleBackgroundRefresh()
             default:
                 break
             }
@@ -43,11 +43,11 @@ struct DailyDoseApp: App {
             // process the moment this closure returns, and a half-written
             // notification plan is a missed medication with no error message.
             await environment.refresh()
-            scheduleBackgroundRefresh()
+            Self.scheduleBackgroundRefresh()
         }
     }
 
-    private static let log = Logger(subsystem: "com.ysr.dailydose", category: "refresh")
+    nonisolated private static let log = Logger(subsystem: "com.ysr.dailydose", category: "refresh")
 
     /// Asks the system to wake us in twelve hours to top up the reminders.
     ///
@@ -64,7 +64,7 @@ struct DailyDoseApp: App {
     /// from here, and their scheduled reminders still fire from their own
     /// repeating triggers. This is a line in the console for whoever is holding
     /// the phone and wondering.
-    private func scheduleBackgroundRefresh() {
+    nonisolated private static func scheduleBackgroundRefresh() {
         let request = BGAppRefreshTaskRequest(identifier: Self.refreshTaskIdentifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 12 * 3600)
         do {

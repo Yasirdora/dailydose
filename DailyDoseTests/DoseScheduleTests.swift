@@ -551,16 +551,19 @@ struct SupplyValidationTests {
         #expect(draft.isValid)
     }
 
-    /// Every blocked state names itself. The Save button and this string read
-    /// the same properties, so a dimmed button can never appear with nothing on
-    /// screen saying why.
+    /// Every blocked state names itself, bar two. The Save button and this
+    /// string read the same properties, so a dimmed button can never appear
+    /// with nothing on screen saying why — except for the empty name and the
+    /// blank supply count, which block deliberately and silently because their
+    /// sentences fired the moment the user acted rather than after a mistake.
     @Test("Each reason Save is blocked has a message, and a valid draft has none")
     func blockingReasonNamesEveryCase() {
         #expect(draft().blockingReason == nil)
 
         var noName = draft()
         noName.name = "   "
-        #expect(noName.blockingReason != nil)
+        #expect(noName.blockingReason == nil, "an empty name blocks without a sentence")
+        #expect(!noName.isValid, "but it still blocks")
 
         var noTimes = draft()
         noTimes.times = []
@@ -582,6 +585,7 @@ struct SupplyValidationTests {
 
         var supply = draft()
         supply.tracksSupply = true
-        #expect(supply.blockingReason != nil)
+        #expect(supply.blockingReason == nil, "a blank count blocks without a sentence")
+        #expect(!supply.isValid, "but it still blocks")
     }
 }

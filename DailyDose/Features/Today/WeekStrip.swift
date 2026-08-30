@@ -52,6 +52,14 @@ struct WeekStrip: View {
         }
         .padding(.vertical, 12)
         .cardStyle(cornerRadius: 20)
+        // Seven fixed columns is the one layout in the app that cannot grow.
+        // `DayRing` is `@ScaledMetric`, so at AX5 each ring reaches ~106pt and
+        // the row wants ~740pt inside a 343pt card on an SE — the pager clips
+        // it and four days of the week become invisible and untappable.
+        // Capping the strip keeps all seven reachable; Calendar's own month
+        // grid caps for the same reason. Nothing is lost to VoiceOver, which
+        // reads the full spoken label above and ignores this entirely.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
     private func label(for day: WeekDay) -> String {

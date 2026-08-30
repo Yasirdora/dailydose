@@ -259,14 +259,14 @@ struct SettingsView: View {
             Button {
                 exportBackup()
             } label: {
-                Label(String(localized: "Back up"), systemImage: "arrow.down.document")
+                Label(String(localized: "Back up"), systemImage: "arrow.down.doc")
                     .foregroundStyle(.primary)
             }
 
             Button {
                 isImporting = true
             } label: {
-                Label(String(localized: "Restore from a backup"), systemImage: "arrow.up.document")
+                Label(String(localized: "Restore from a backup"), systemImage: "arrow.up.doc")
                     .foregroundStyle(.primary)
             }
 

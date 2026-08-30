@@ -306,11 +306,16 @@ struct DispensingLabelTests {
     }
 
     /// But wanting warnings with nothing ever captured or typed still blocks.
+    ///
+    /// Silently, by design: the count blocks Save through `isValid` and no
+    /// longer contributes a sentence to `blockingReason`.
     @Test("Tracking on with nothing captured still blocks Save")
     func trackingWithNoCountStillBlocks() {
         var draft = MedicationDraft()
+        draft.name = "Metformin"
         draft.tracksSupply = true
         #expect(draft.isMissingSupplyCount)
-        #expect(draft.blockingReason != nil)
+        #expect(!draft.isValid)
+        #expect(draft.blockingReason == nil, "it blocks without a sentence")
     }
 }

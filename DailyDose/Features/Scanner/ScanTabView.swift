@@ -7,18 +7,19 @@ import SwiftUI
 ///
 /// Capture happens four ways, in descending order of magic:
 ///
-/// 1. **A barcode** — fires the instant one parses. No stability window: a
-///    barcode carries its own check digit, so it is either right or it is not
-///    read at all, and there is nothing for a second of waiting to confirm.
-///    If the code matches a pack the user has scanned before, this becomes a
-///    refill rather than a new medication.
-/// 2. **Auto-capture** — a readable strength ("500 mg") held steady for a
+/// 1. **Auto-capture** — a readable strength ("500 mg") held steady for a
 ///    second fires on its own. Pointing is all the teaching anyone needs.
-/// 3. **The shutter** — the explicit path, and the affordance that tells a
+/// 2. **The shutter** — the explicit path, and the affordance that tells a
 ///    first-time user this screen is for scanning. Tap-to-pick alone failed
 ///    that test: nobody discovered it, because nothing on screen says "tap".
-/// 4. **Tapping a highlighted fragment** — still there, just no longer the
+/// 3. **Tapping a highlighted fragment** — still there, just no longer the
 ///    only way.
+///
+/// A pack rides along with whichever of those fires: there is no separate
+/// barcode trigger, because the live AVFoundation path was removed — the box
+/// prints the code's own contents in type the OCR already reads, and
+/// `HRIParser` takes it from there. If that identifies a pack the user has
+/// scanned before, this becomes a refill rather than a new medication.
 ///
 /// Only what the card shows can be scanned — the region of interest is the
 /// card itself, so text outside the window cannot trigger a capture.
@@ -49,11 +50,9 @@ struct ScanTabView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                header
-
                 cameraCard
                     .padding(.horizontal, 24)
-                    .padding(.top, 30)
+                    .padding(.top, 24)
 
                 guidance
                     .padding(.top, 20)
@@ -65,8 +64,15 @@ struct ScanTabView: View {
                     .padding(.bottom, 12)
             }
             .background(Color(.systemGroupedBackground))
-            // A sheet carries no navigation bar; the chevron is the header.
-            .toolbar(.hidden, for: .navigationBar)
+            // The system's own cancellation orb, in the toolbar where it
+            // belongs. This was a hand-drawn chevron for a while, wrong twice
+            // over: a chevron means "back up a navigation stack" and there is
+            // no stack here, and every hand-built orb fights the toolbar's
+            // automatic glass treatment — see `SheetCloseButton`.
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+            }
             .toast($toast)
         }
         // Prime, don't pounce: the permission explanation must be read
@@ -86,12 +92,7 @@ struct ScanTabView: View {
             // from a flicker fills the form with garbage.
             autoCapture?.cancel()
             guard candidate != nil, !isPresenting else { return }
-            autoCapture = Task {
-                try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled, let current = recognized.strengthCandidate else { return }
-                Haptics.success()
-                present(current)
-            }
+            autoCapture = steadyStrengthTask(store: recognized) { present($0) }
         }
         .onDisappear { autoCapture?.cancel() }
         .sheet(item: $scanned) { capture in
@@ -118,93 +119,38 @@ struct ScanTabView: View {
         scanned != nil || matched != nil || isEnteringManually
     }
 
-    // MARK: - Header
-
-    /// Wallet's chevron: a quiet glass orb, top-left. 32 pt visual — the size
-    /// of the system's own navigation orbs — with the hit target invisibly
-    /// expanded to 44 so it stays easy to reach.
-    private var header: some View {
-        HStack {
-            Button {
-                Haptics.tap()
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 15, weight: .semibold))
-                    .frame(width: 32, height: 32)
-            }
-            .modifier(GlassCircle())
-            .contentShape(Circle().inset(by: -6))
-            .accessibilityLabel(String(localized: "Back"))
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-    }
-
     // MARK: - Camera card
 
     /// The live preview, clipped to the rounded card. The card's border IS
     /// the scan window — it brightens with the app accent the moment the
     /// label inside is readable: the "locked on" cue, in colour not words.
     private var cameraCard: some View {
-        ZStack {
-            if isScanning {
-                LabelScannerView(
-                    store: recognized,
-                    onBackgroundTap: {
-                        // Only nudge when the scanner genuinely sees nothing —
-                        // a tap that hit a fragment is already handled.
-                        if !recognized.hasCandidate { showEmptyHint() }
-                    },
-                    onPick: { transcript in
-                        // A tap names its own winner, so it goes through the
-                        // same rules ranking does — see `pickable`.
-                        guard let picked = recognized.pickable(transcript) else {
-                            Haptics.warning()
-                            return
-                        }
-                        autoCapture?.cancel()
-                        Haptics.impact()
-                        present(picked)
-                    }
-                )
-            } else {
-                CameraUnavailableView(state: authorization.state) {
-                    Task { await authorization.request() }
+        ScannerCameraCard(
+            store: recognized,
+            authorization: authorization,
+            onBackgroundTap: {
+                // Only nudge when the scanner genuinely sees nothing —
+                // a tap that hit a fragment is already handled.
+                if !recognized.hasCandidate { showEmptyHint() }
+            },
+            onPick: { transcript in
+                // A tap names its own winner, so it goes through the
+                // same rules ranking does — see `pickable`.
+                guard let picked = recognized.pickable(transcript) else {
+                    Haptics.warning()
+                    return
                 }
+                autoCapture?.cancel()
+                Haptics.impact()
+                present(picked)
             }
-        }
-        .frame(height: 220)
-        .frame(maxWidth: .infinity)
-        .background(Color.black, in: .rect(cornerRadius: 28, style: .continuous))
-        .clipShape(.rect(cornerRadius: 28, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .strokeBorder(
-                    recognized.strengthCandidate != nil ? Theme.accent : Color.white.opacity(0.55),
-                    lineWidth: recognized.strengthCandidate != nil ? 3 : 1.5
-                )
-                .allowsHitTesting(false)
         )
-        .animation(.smooth(duration: 0.25), value: recognized.strengthCandidate != nil)
     }
 
     /// Title plus one brief instruction. Turns into "Hold steady…" once the
     /// label reads — the countdown the user can feel.
     private var guidance: some View {
-        VStack(spacing: 6) {
-            Text(String(localized: "Scan Medication Label"))
-                .font(.title3.weight(.bold))
-            Text(recognized.strengthCandidate != nil
-                 ? String(localized: "Hold steady…")
-                 : String(localized: "Point at the label or the barcode."))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(.horizontal, 32)
-        .accessibilityElement(children: .combine)
+        ScannerGuidance(isLockedOn: recognized.strengthCandidate != nil)
     }
 
     // MARK: - Bottom controls
@@ -287,6 +233,88 @@ struct ScanTabView: View {
     }
 }
 
+// MARK: - Shared scanner surface
+
+/// The live preview, clipped to the rounded card. The card's border IS the
+/// scan window — it brightens with the app accent the moment the label inside
+/// is readable: the "locked on" cue, in colour not words.
+///
+/// Both scanners in this file draw it. Two implementations is how they drifted
+/// apart in the first place — the editor's sheet spent a release as a
+/// full-bleed camera with no window, no cue and no shutter — so the region of
+/// interest, the border and the unavailable state now have one home.
+private struct ScannerCameraCard: View {
+    let store: RecognizedTextStore
+    let authorization: CameraAuthorization
+    let onBackgroundTap: () -> Void
+    let onPick: (String) -> Void
+
+    private var isLockedOn: Bool { store.strengthCandidate != nil }
+
+    var body: some View {
+        ZStack {
+            if authorization.state == .authorized, LabelScannerView.isSupported {
+                LabelScannerView(store: store, onBackgroundTap: onBackgroundTap, onPick: onPick)
+            } else {
+                CameraUnavailableView(state: authorization.state) {
+                    Task { await authorization.request() }
+                }
+            }
+        }
+        .frame(height: 220)
+        .frame(maxWidth: .infinity)
+        .background(Color.black, in: .rect(cornerRadius: 28, style: .continuous))
+        .clipShape(.rect(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .strokeBorder(
+                    isLockedOn ? Theme.accent : Color.white.opacity(0.55),
+                    lineWidth: isLockedOn ? 3 : 1.5
+                )
+                .allowsHitTesting(false)
+        )
+        .animation(.smooth(duration: 0.25), value: isLockedOn)
+    }
+}
+
+/// Title plus one brief instruction. Turns into "Hold steady…" once the label
+/// reads — the countdown the user can feel.
+private struct ScannerGuidance: View {
+    let isLockedOn: Bool
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(String(localized: "Scan Medication Label"))
+                .font(.title3.weight(.bold))
+            Text(isLockedOn
+                 ? String(localized: "Hold steady…")
+                 : String(localized: "Point at the label or the barcode."))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 32)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The one-second stability window before a steady strength reading fires.
+///
+/// OCR flickers frame to frame, and a capture taken from a flicker fills the
+/// form with garbage. The caller keeps the handle so it can cancel — every
+/// path that puts something in front of the camera has to.
+private func steadyStrengthTask(
+    store: RecognizedTextStore,
+    action: @escaping @MainActor (String) -> Void
+) -> Task<Void, Never> {
+    Task { @MainActor in
+        try? await Task.sleep(for: .seconds(1))
+        guard !Task.isCancelled, let current = store.strengthCandidate else { return }
+        Haptics.success()
+        action(current)
+    }
+}
+
 /// Camera-app shutter language, with an honest disabled state: dimmed and
 /// unavailable until the scanner actually has something to capture.
 private struct ShutterButton: View {
@@ -317,18 +345,17 @@ private struct ShutterButton: View {
     }
 }
 
-/// A round glass button — Wallet's chevron orb, the system's own material.
-private struct GlassCircle: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.buttonStyle(.glass).buttonBorderShape(.circle)
-        } else {
-            content.buttonStyle(.bordered).buttonBorderShape(.circle)
-        }
-    }
-}
-
 /// The scanner presented as a sheet from the medication editor.
+///
+/// The same surface as `ScanTabView` — same camera card, same lock-on border,
+/// same guidance, same shutter — because it is the same job: point at a box,
+/// get its name and strength. What differs is where the capture goes. The tab
+/// scanner may decide a pack is a refill of something you already take; here
+/// you are already mid-form, so the capture fills that form in and leaves.
+///
+/// For the same reason there is no "Enter Manually" button: the manual form is
+/// the thing behind this sheet. Close returns to it, and when the camera
+/// cannot be used at all, that route is offered outright.
 struct LabelScannerSheet: View {
     /// One capture, both engines. The barcode half is nil on a box that carries
     /// no code we can read, which is normal — a UK pack may carry none at all.
@@ -338,39 +365,142 @@ struct LabelScannerSheet: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var authorization = CameraAuthorization()
     @State private var recognized = RecognizedTextStore()
+    @State private var autoCapture: Task<Void, Never>?
+    @State private var toast: Toast?
+    /// Delivery is one-way and one-shot. The shutter, a tap and the stability
+    /// window can all land in the same frame; without this the editor would be
+    /// handed two captures and the sheet dismissed twice.
+    @State private var hasDelivered = false
 
     static var isAvailable: Bool { LabelScannerView.isSupported }
 
+    private var isScanning: Bool {
+        authorization.state == .authorized && LabelScannerView.isSupported
+    }
+
     var body: some View {
         NavigationStack {
-            Group {
-                if authorization.state == .authorized, LabelScannerView.isSupported {
-                    LabelScannerView(store: recognized) { transcript in
-                        guard let picked = recognized.pickable(transcript) else { return }
-                        let result = LabelScanParser.parse(
-                            picked, context: recognized.packagingText
-                        )
-                        guard !result.isEmpty else { return }
-                        onPick(ScanCapture(label: result, pack: recognized.packCandidate))
-                        dismiss()
+            VStack(spacing: 0) {
+                ScannerCameraCard(
+                    store: recognized,
+                    authorization: authorization,
+                    onBackgroundTap: {
+                        // Only nudge when the scanner genuinely sees nothing —
+                        // a tap that hit a fragment is already handled.
+                        if !recognized.hasCandidate { showEmptyHint() }
+                    },
+                    onPick: { transcript in
+                        // A tap names its own winner, so it goes through the
+                        // same rules ranking does — see `pickable`.
+                        guard let picked = recognized.pickable(transcript) else {
+                            Haptics.warning()
+                            return
+                        }
+                        autoCapture?.cancel()
+                        Haptics.impact()
+                        deliver(picked)
                     }
-                    .ignoresSafeArea(edges: .bottom)
-                } else {
-                    CameraUnavailableView(state: authorization.state) {
-                        Task { await authorization.request() }
-                    }
-                }
+                )
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
+
+                ScannerGuidance(isLockedOn: recognized.strengthCandidate != nil)
+                    .padding(.top, 20)
+
+                Spacer(minLength: 16)
+
+                bottomControls
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 12)
             }
-            .navigationTitle(String(localized: "Scan Label"))
+            .background(Color(.systemGroupedBackground))
+            // The same system cancellation orb every other sheet in the app
+            // uses. This is a modal root, not a step in a navigation stack.
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
             }
+            .toast($toast)
         }
+        // Prime, don't pounce: the permission explanation must be read *before*
+        // the system alert. The "Allow Camera" button inside the card makes the
+        // request.
         .task { authorization.refresh() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { authorization.refresh() }
         }
+        .onChange(of: recognized.strengthCandidate) { _, candidate in
+            // Any change — appearing, disappearing, re-reading — restarts the
+            // stability window.
+            autoCapture?.cancel()
+            guard candidate != nil, !hasDelivered else { return }
+            autoCapture = steadyStrengthTask(store: recognized) { deliver($0) }
+        }
+        .onDisappear { autoCapture?.cancel() }
+    }
+
+    // MARK: - Bottom controls
+
+    /// The shutter while there is a camera to fire; otherwise the way back to
+    /// the form, which is the only thing left that can help.
+    @ViewBuilder
+    private var bottomControls: some View {
+        if isScanning {
+            ShutterButton(isEnabled: recognized.hasCandidate) { capture() }
+        } else {
+            Button {
+                Haptics.select()
+                dismiss()
+            } label: {
+                Text(String(localized: "Type It Instead"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+            }
+            .prominentButton()
+            .accessibilityHint(String(localized: "Returns to the medication details"))
+        }
+    }
+
+    // MARK: - Capture
+
+    private func capture() {
+        autoCapture?.cancel()
+        // Either half is enough. A small pack may print nothing the OCR can use
+        // as a name except its own transcription — and that still carries the
+        // identity, which is most of what the editor needs.
+        guard recognized.bestCandidate != nil || recognized.packCandidate != nil else {
+            showEmptyHint()
+            return
+        }
+        Haptics.impact()
+        deliver(recognized.bestCandidate ?? "")
+    }
+
+    /// Hands one capture to the editor and gets out of the way.
+    private func deliver(_ transcript: String) {
+        guard !hasDelivered else { return }
+        // Everything else in frame comes with it: the form and the pack size
+        // are almost never printed on the same line as the name.
+        let result = LabelScanParser.parse(transcript, context: recognized.packagingText)
+        let pack = recognized.packCandidate
+        // A readable name is not required when the pack identified itself —
+        // the same rule the tab scanner applies.
+        guard !result.isEmpty || pack != nil else {
+            showEmptyHint()
+            return
+        }
+        hasDelivered = true
+        autoCapture?.cancel()
+        onPick(ScanCapture(label: result, pack: pack))
+        dismiss()
+    }
+
+    private func showEmptyHint() {
+        Haptics.warning()
+        toast = Toast(
+            message: String(localized: "No label detected — point at the name on the box"),
+            systemImage: "viewfinder"
+        )
     }
 }
 

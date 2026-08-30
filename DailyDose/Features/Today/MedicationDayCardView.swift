@@ -24,6 +24,7 @@ struct MedicationDayCardView: View {
     let onOpenDay: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// The tap-confirm moment: the Taken button morphs into a checkmark
     /// before the log is written, so the feedback lands *before* the card
@@ -120,60 +121,94 @@ struct MedicationDayCardView: View {
         .accessibilityHint(String(localized: "Opens the day's doses for this medication"))
     }
 
+    /// Tile, title and the next-dose spotlight — laid out side by side at
+    /// normal text sizes, stacked once text goes accessibility-sized.
+    ///
+    /// Three columns cannot share 375pt at AX5: the name truncated to "Pa n…",
+    /// the strength to "50 0…", and "2:00 PM" wrapped to one character per
+    /// line. Stacking gives the name the full width and puts the tile and the
+    /// time on a row of their own, where both still fit.
     private var headerContent: some View {
-        HStack(spacing: 14) {
-            MedicationTile(
-                color: MedicationColor.named(card.medication.colorName),
-                form: card.medication.form,
-                badge: headerBadge
-            )
-            .overlay(alignment: .topTrailing) {
-                // The notification-stack count badge: how many doses of this
-                // medication are still to take today.
-                if showsStackEdges {
-                    Text("\(pendingCount)")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Color(.systemBackground))
-                        .frame(minWidth: 22, minHeight: 22)
-                        .background(Color(.label), in: .circle)
-                        .offset(x: 7, y: -7)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(card.medication.name)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    // Two lines, not one: at accessibility text sizes a single
-                    // line truncated most real medication names.
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                if !detail.isEmpty {
-                    Text(detail)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            // The next moment, in the top-right spotlight — big and loud
-            // while it needs you, quieter once it's simply on its way.
-            if let next = nextDose {
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text(TimeOfDay(from: next.scheduledAt).formatted())
-                        .font(.headline.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(next.needsAction() ? .primary : .secondary)
-                    if !next.needsAction() {
-                        TimelineChip(dose: next, showsTime: false, now: now, window: window)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .top, spacing: 14) {
+                        tile
+                        Spacer(minLength: 8)
+                        spotlight
                     }
+                    titleBlock
                 }
-                .accessibilityHidden(true)
+            } else {
+                HStack(spacing: 14) {
+                    tile
+                    titleBlock
+                    Spacer(minLength: 8)
+                    spotlight
+                }
             }
         }
         .contentShape(.rect)
+    }
+
+    private var tile: some View {
+        MedicationTile(
+            color: MedicationColor.named(card.medication.colorName),
+            form: card.medication.form,
+            badge: headerBadge
+        )
+        .overlay(alignment: .topTrailing) {
+            // The notification-stack count badge: how many doses of this
+            // medication are still to take today.
+            if showsStackEdges {
+                Text("\(pendingCount)")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color(.systemBackground))
+                    .frame(minWidth: 22, minHeight: 22)
+                    .background(Color(.label), in: .circle)
+                    .offset(x: 7, y: -7)
+            }
+        }
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(card.medication.name)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                // Two lines, not one: at accessibility text sizes a single
+                // line truncated most real medication names.
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+            if !detail.isEmpty {
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+        }
+    }
+
+    /// The next moment, in the top-right spotlight — big and loud while it
+    /// needs you, quieter once it's simply on its way.
+    @ViewBuilder
+    private var spotlight: some View {
+        if let next = nextDose {
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(TimeOfDay(from: next.scheduledAt).formatted())
+                    .font(.headline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(next.needsAction() ? .primary : .secondary)
+                    // The time is a single unbreakable token; letting it wrap
+                    // produced a column of single characters.
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                if !next.needsAction() {
+                    TimelineChip(dose: next, showsTime: false, now: now, window: window)
+                }
+            }
+            .accessibilityHidden(true)
+        }
     }
 
     private var headerAccessibilityLabel: String {
@@ -250,36 +285,59 @@ struct MedicationDayCardView: View {
 
     /// The call to action: the state chip anchors the left, and on the right
     /// two compact capsules — Skip in quiet glass, Taken in green.
+    /// Status chip, Skip and Taken — one row normally, stacked full-width at
+    /// accessibility text sizes.
+    ///
+    /// Three side-by-side pills cannot share an SE's width at AX5: they
+    /// collapsed into narrow columns reading one character per line ("ki / p"
+    /// for Skip). These are the two buttons the whole app exists to offer, so
+    /// they get the full width rather than a clever fit.
+    @ViewBuilder
     private func actions(for dose: ResolvedDose) -> some View {
-        HStack(spacing: 10) {
-            TimelineChip(dose: dose, showsTime: false, now: now, window: window)
-                .accessibilityHidden(true)
-
-            Spacer(minLength: 4)
-
-            Button { onLog(dose, .skipped) } label: {
-                Text(String(localized: "Skip"))
-                    .font(.subheadline.weight(.semibold))
-            }
-            .secondaryButton()
-            .disabled(confirmingDoseID != nil)
-
-            Button { confirmTaken(dose) } label: {
-                let confirming = confirmingDoseID == dose.id
-                ZStack {
-                    Text(String(localized: "Taken"))
-                        .opacity(confirming ? 0 : 1)
-                    Image(systemName: "checkmark")
-                        .font(.subheadline.weight(.bold))
-                        .opacity(confirming ? 1 : 0)
-                        .scaleEffect(confirming ? 1 : 0.4)
-                }
+        let skip = Button { onLog(dose, .skipped) } label: {
+            Text(String(localized: "Skip"))
                 .font(.subheadline.weight(.semibold))
-                .frame(minWidth: 64)
+                .lineLimit(1)
+                .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
+        }
+        .secondaryButton()
+        .disabled(confirmingDoseID != nil)
+
+        let taken = Button { confirmTaken(dose) } label: {
+            let confirming = confirmingDoseID == dose.id
+            ZStack {
+                Text(String(localized: "Taken"))
+                    .opacity(confirming ? 0 : 1)
+                Image(systemName: "checkmark")
+                    .font(.subheadline.weight(.bold))
+                    .opacity(confirming ? 1 : 0)
+                    .scaleEffect(confirming ? 1 : 0.4)
             }
-            .prominentButton()
-            .tint(Theme.taken)
-            .disabled(confirmingDoseID != nil)
+            .font(.subheadline.weight(.semibold))
+            .lineLimit(1)
+            .frame(minWidth: 64,
+                   maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
+        }
+        .prominentButton()
+        .tint(Theme.taken)
+        .disabled(confirmingDoseID != nil)
+
+        let chip = TimelineChip(dose: dose, showsTime: false, now: now, window: window)
+            .accessibilityHidden(true)
+
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 10) {
+                chip
+                taken
+                skip
+            }
+        } else {
+            HStack(spacing: 10) {
+                chip
+                Spacer(minLength: 4)
+                skip
+                taken
+            }
         }
     }
 

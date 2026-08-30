@@ -6,9 +6,24 @@
 	<false/>
 	<key>NSPrivacyTrackingDomains</key>
 	<array/>
+	<!-- Nothing leaves the device: no account, no server, no analytics, and no
+	     network code anywhere in the target. Medication and adherence data is
+	     stored locally in SwiftData and only leaves via a backup file the user
+	     exports themselves through the share sheet. -->
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array/>
 	<key>NSPrivacyAccessedAPITypes</key>
-	<array/>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<!-- CA92.1 — read/write only this app's own preferences
+				     (reminder settings, dose window). Never shared. -->
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

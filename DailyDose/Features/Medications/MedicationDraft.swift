@@ -178,25 +178,33 @@ struct MedicationDraft: Equatable {
     /// clause buried here. The Save button and the sentence explaining it read
     /// the same source, so the button can never grey out with nothing on
     /// screen saying why.
-    var isValid: Bool { blockingReason == nil }
+    ///
+    /// A missing name and a blank supply count both block Save *silently* —
+    /// neither is one of the `blockingReason` cases. The name field is the
+    /// first thing on the sheet with its placeholder in plain sight, and the
+    /// supply count sits directly under the toggle that revealed it, so both
+    /// sentences fired the moment the user acted rather than after a mistake.
+    /// Every other blocked state still names itself.
+    var isValid: Bool { !trimmedName.isEmpty && !isMissingSupplyCount && blockingReason == nil }
 
-    /// Why Save is dimmed, in the order the fields appear on screen.
+    /// Why Save is dimmed, in the order the fields appear on screen — for the
+    /// states a user cannot work out by looking at the form.
     ///
     /// The per-card footers already explained each of these, but a footer only
-    /// helps someone looking at it. Turning on "Track supply" leaves the count
-    /// blank, which disables Save — correctly, because a blank count used to
-    /// persist as 0 and `0 <= 0` fired a refill alert on a box the user had
-    /// just filled — and the explanation for that sits in the supply card while
-    /// the dimmed button is up in the toolbar. On device that read as a broken
-    /// toggle. The rule is right; it was the sentence that was in the wrong
-    /// place, so this one is pinned under the toolbar beside Save.
+    /// helps someone looking at it, and the button it explains is up in the
+    /// toolbar — so what remains here is pinned beside Save.
     ///
-    /// `isValid` is derived from this rather than the other way round: one
-    /// source, so the button and the reason can never disagree.
+    /// The blank supply count used to be one of these, for a good reason: a
+    /// blank count persisted as 0, `0 <= 0` fired a refill alert on a box the
+    /// user had just filled, and with no sentence the dimmed Save read as a
+    /// broken toggle. The rule still holds — `isValid` enforces it — but the
+    /// sentence was asked for removal. If the toggle ever reads as broken
+    /// again, that is the thread to pull.
+    ///
+    /// `isValid` reads this rather than repeating the rules, so a stated reason
+    /// and a live Save button can never disagree — with the single, documented
+    /// exception of the empty name above.
     var blockingReason: String? {
-        if trimmedName.isEmpty {
-            return String(localized: "Enter the medication name to continue.")
-        }
         if hasInvalidDoseNumbers {
             return String(localized: "Strength and amount should be numbers, like 500 or 0.5.")
         }
@@ -208,9 +216,6 @@ struct MedicationDraft: Equatable {
         }
         if hasEndBeforeStart {
             return String(localized: "The end date is before the start date.")
-        }
-        if isMissingSupplyCount {
-            return String(localized: "Enter how many doses you have on hand, or turn tracking off.")
         }
         return nil
     }
