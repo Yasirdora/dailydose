@@ -326,7 +326,7 @@ struct SettingsView: View {
                 Label(String(localized: "About Daily Dose"), systemImage: "info.circle")
             }
 
-            Link(destination: URL(string: "https://dailydose.app/privacy")!) {
+            Link(destination: URL(string: "https://dailymeds.figoodle.com/privacy/")!) {
                 LabeledContent {
                     Image(systemName: "arrow.up.right")
                         .font(.footnote.weight(.semibold))

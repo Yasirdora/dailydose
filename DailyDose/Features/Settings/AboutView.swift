@@ -136,7 +136,7 @@ struct DoseWindowPicker: View {
 ///
 /// Costs nothing and turns "it doesn't work" into a report someone can act on.
 enum FeedbackMail {
-    static let address = "support@dailydose.app"
+    static let address = "support@figoodle.com"
 
     static var url: URL? {
         let subject = "Daily Dose feedback"
