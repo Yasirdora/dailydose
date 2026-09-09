@@ -53,7 +53,21 @@ nav {
   text-decoration: none;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+}
+.logo-icon {
+  width: 26px;
+  height: 26px;
+  background: linear-gradient(to bottom, rgb(255,71,88), rgb(220,29,50));
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(220,29,50,0.3);
+}
+.logo-icon img {
+  width: 16px;
+  height: 16px;
 }
 .nav-links {
   display: flex;

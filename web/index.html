@@ -42,6 +42,25 @@
       color: #fff;
       text-decoration: none;
       letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-icon {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(to bottom, rgb(255,71,88), rgb(220,29,50));
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(220,29,50,0.4);
+    }
+    
+    .logo-icon img {
+      width: 18px;
+      height: 18px;
     }
 
     .nav-links { display: flex; gap: 28px; list-style: none; }
@@ -152,7 +171,10 @@
 <div class="page">
 
   <nav>
-    <a class="wordmark" href="/">DailyMeds</a>
+    <a class="wordmark" href="/">
+      <div class="logo-icon"><img src="/logo.png" alt="" /></div>
+      DailyMeds
+    </a>
     <ul class="nav-links">
       <li><a href="/support/">Support</a></li>
       <li><a href="/privacy/">Privacy</a></li>
