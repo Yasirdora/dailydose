@@ -19,14 +19,14 @@
       overflow-x: hidden;
     }
 
-    /* ── Layout shell ─────────────────────── */
+    /* ── Layout ───────────────────────────── */
     .page {
       min-height: 100dvh;
       display: grid;
       grid-template-rows: auto 1fr auto;
     }
 
-    /* ── Nav ─────────────────────────────── */
+    /* ── Nav ──────────────────────────────── */
     nav {
       display: flex;
       justify-content: space-between;
@@ -44,17 +44,12 @@
       letter-spacing: -0.01em;
     }
 
-    .nav-links {
-      display: flex;
-      gap: 28px;
-      list-style: none;
-    }
+    .nav-links { display: flex; gap: 28px; list-style: none; }
 
     .nav-links a {
       font-size: 0.82rem;
       color: rgba(255,255,255,0.45);
       text-decoration: none;
-      letter-spacing: 0.01em;
       transition: color 0.2s;
     }
 
@@ -66,11 +61,10 @@
       grid-template-columns: 1fr 1fr;
       align-items: center;
       padding: 0 48px;
-      gap: 40px;
+      gap: 48px;
     }
 
-    /* Left ── text */
-    .hero-text { max-width: 480px; }
+    .hero-text { max-width: 460px; }
 
     .hero-text h1 {
       font-size: clamp(2.6rem, 5.5vw, 4.2rem);
@@ -102,125 +96,24 @@
     }
 
     .store-btn:hover { opacity: 0.85; }
-
     .store-btn svg { flex-shrink: 0; }
 
-    /* Right ── phone mockup */
+    /* ── Screenshot ───────────────────────── */
     .hero-visual {
       display: flex;
       justify-content: center;
       align-items: flex-end;
-      padding-top: 40px;
+      padding-top: 16px;
     }
 
-    .phone {
-      width: 220px;
-      height: 440px;
-      background: #1a1a1a;
-      border-radius: 36px;
-      border: 1.5px solid rgba(255,255,255,0.1);
-      position: relative;
-      overflow: hidden;
-      box-shadow:
-        0 0 0 1px rgba(255,255,255,0.05),
-        0 40px 80px rgba(0,0,0,0.6);
-    }
-
-    /* Dynamic island */
-    .phone::before {
-      content: '';
-      position: absolute;
-      top: 14px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 80px;
-      height: 26px;
-      background: #0e0e0e;
-      border-radius: 20px;
-      z-index: 2;
-    }
-
-    /* Screen content */
-    .phone-screen {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      padding: 60px 22px 24px;
-    }
-
-    .phone-time {
-      font-size: 0.65rem;
-      color: rgba(255,255,255,0.3);
-      margin-bottom: 28px;
-      text-align: center;
-    }
-
-    .phone-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 11px 0;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-    }
-
-    .phone-row:last-child { border-bottom: none; }
-
-    .pill-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    .pill-label {
-      font-size: 0.7rem;
-      color: rgba(255,255,255,0.7);
-      flex: 1;
-    }
-
-    .pill-time {
-      font-size: 0.62rem;
-      color: rgba(255,255,255,0.25);
-    }
-
-    .pill-check {
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      border: 1.5px solid rgba(255,255,255,0.15);
-      flex-shrink: 0;
-    }
-
-    .pill-check.done {
-      background: rgba(255,255,255,0.9);
-      border-color: transparent;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .pill-check.done::after {
-      content: '';
-      width: 5px;
-      height: 3px;
-      border-left: 1.5px solid #0e0e0e;
-      border-bottom: 1.5px solid #0e0e0e;
-      transform: rotate(-45deg) translate(0.5px, -0.5px);
+    .app-screenshot {
+      max-height: 580px;
+      width: auto;
       display: block;
+      filter: drop-shadow(0 32px 64px rgba(0,0,0,0.7));
     }
 
-    .phone-label {
-      font-size: 0.58rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: rgba(255,255,255,0.2);
-      margin-bottom: 10px;
-      margin-top: 14px;
-    }
-
-    /* ── Footer ─────────────────────────── */
+    /* ── Footer ───────────────────────────── */
     footer {
       padding: 28px 48px;
       display: flex;
@@ -230,39 +123,27 @@
       color: rgba(255,255,255,0.2);
     }
 
-    footer a {
-      color: rgba(255,255,255,0.2);
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-
+    footer a { color: rgba(255,255,255,0.2); text-decoration: none; transition: color 0.2s; }
     footer a:hover { color: rgba(255,255,255,0.7); }
-
     footer .links { display: flex; gap: 24px; }
 
-    /* ── Mobile ─────────────────────────── */
+    /* ── Mobile ───────────────────────────── */
     @media (max-width: 640px) {
       nav    { padding: 24px 24px; }
       footer { padding: 24px 24px; flex-direction: column; gap: 12px; text-align: center; }
 
       .hero {
         grid-template-columns: 1fr;
-        padding: 40px 24px 0;
+        padding: 32px 24px 0;
         text-align: center;
+        gap: 32px;
       }
 
       .hero-text { max-width: 100%; }
 
-      .hero-visual {
-        justify-content: center;
-        padding-top: 20px;
-        overflow: hidden;
-      }
+      .hero-visual { justify-content: center; }
 
-      .phone {
-        width: 180px;
-        height: 360px;
-      }
+      .app-screenshot { max-height: 420px; }
     }
   </style>
 </head>
@@ -282,7 +163,7 @@
 
     <div class="hero-text">
       <h1>Stay on track <em>with your</em> health.</h1>
-      <!-- Replace href with real App Store ID once live -->
+      <!-- Replace href with your real App Store ID once live -->
       <a class="store-btn" href="https://apps.apple.com/app/idXXXXXXXXXX" target="_blank" rel="noopener">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
           <path d="M11.182 0c.096.981-.27 1.98-.902 2.699-.63.714-1.638 1.27-2.64 1.197-.12-.98.338-1.99.923-2.65C9.157.572 10.226.05 11.182 0zM8.006 4.222c.73 0 2.087-.997 3.862-.997.607 0 2.387.176 3.516 1.793l-.057.038c-.307.202-1.16.83-1.16 2.347 0 1.888 1.155 2.553 1.48 2.749l.092.056c-.072.203-.46 1.41-1.361 2.644-.794 1.107-1.62 2.148-2.813 2.148-1.136 0-1.51-.68-2.82-.68-1.278 0-1.761.7-2.775.7-1.102 0-1.965-.993-2.842-2.175C1.72 10.783 1 8.998 1 7.3c0-2.885 1.878-4.412 3.726-4.412.955 0 1.907.546 2.527.546.584 0 1.533-.632 2.628-.632l-.875.42z"/>
@@ -292,50 +173,13 @@
     </div>
 
     <div class="hero-visual">
-      <div class="phone">
-        <div class="phone-screen">
-          <p class="phone-time">9:41</p>
-
-          <p class="phone-label">Today</p>
-
-          <div class="phone-row">
-            <div class="pill-dot" style="background:#6eaed6;"></div>
-            <span class="pill-label">Lisinopril 10mg</span>
-            <span class="pill-time">8:00</span>
-            <div class="pill-check done"></div>
-          </div>
-
-          <div class="phone-row">
-            <div class="pill-dot" style="background:#a8c5a0;"></div>
-            <span class="pill-label">Vitamin D</span>
-            <span class="pill-time">8:00</span>
-            <div class="pill-check done"></div>
-          </div>
-
-          <div class="phone-row">
-            <div class="pill-dot" style="background:#e0a87c;"></div>
-            <span class="pill-label">Metformin 500mg</span>
-            <span class="pill-time">1:00 PM</span>
-            <div class="pill-check"></div>
-          </div>
-
-          <div class="phone-row">
-            <div class="pill-dot" style="background:#c49bcf;"></div>
-            <span class="pill-label">Omeprazole</span>
-            <span class="pill-time">8:00 PM</span>
-            <div class="pill-check"></div>
-          </div>
-
-          <p class="phone-label" style="margin-top:18px;">Upcoming</p>
-
-          <div class="phone-row">
-            <div class="pill-dot" style="background:#e0a87c;"></div>
-            <span class="pill-label">Metformin 500mg</span>
-            <span class="pill-time">7:00 PM</span>
-            <div class="pill-check"></div>
-          </div>
-        </div>
-      </div>
+      <img
+        class="app-screenshot"
+        src="/screenshot.png"
+        alt="DailyMeds app showing today's medication schedule with Amoxicillin due and dose logging buttons"
+        width="473"
+        height="966"
+      />
     </div>
 
   </section>
