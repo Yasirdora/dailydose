@@ -24,78 +24,72 @@
 
 <section>
   <div class="highlight">
-    DailyMeds is private by design. Your medications, schedules, and history never leave your device. There is no account, no server, and no tracking of any kind.
+    Short version: DailyMeds doesn't know anything about you. Your medications stay on your phone. That's the whole point.
   </div>
 </section>
 
 <section>
-  <h2>Who we are</h2>
-  <p>DailyMeds is developed and published by figoodle. You can reach us at <a href="mailto:support@figoodle.com" style="color:var(--accent);">support@figoodle.com</a>.</p>
+  <h2>Who made this app</h2>
+  <p>DailyMeds is built by figoodle. It's a one-person indie app, not a company with a privacy team and a legal department. If you have a question, you're emailing a real person at <a href="mailto:support@figoodle.com" style="color:var(--accent);">support@figoodle.com</a>.</p>
 </section>
 
 <section>
-  <h2>What data we collect</h2>
-  <p>None. We do not collect, store, transmit, or process any personal data.</p>
-  <p>Everything you enter into DailyMeds — medication names, doses, schedules, notes, and your dose history — is stored exclusively on your device using Apple's on-device storage. It is never transmitted to us or any third party, and we have no technical ability to access it.</p>
+  <h2>What we collect</h2>
+  <p>Nothing. Genuinely.</p>
+  <p>There's no account, no sign-in, no server receiving your data. The medications you add, the doses you log, the schedules you set — all of it lives in SwiftData on your iPhone and goes nowhere. We don't see it, can't see it, and have no infrastructure to receive it even if we wanted to.</p>
 </section>
 
 <section>
-  <h2>Device permissions the app uses</h2>
+  <h2>What the app asks permission for</h2>
   <ul>
-    <li><strong>Camera</strong> — used only when you open the Scan tab to read text from a medication label or box using on-device text recognition (Apple's Vision framework). No image is captured, saved, or sent anywhere. The camera is never accessed in the background.</li>
-    <li><strong>Notifications</strong> — used to deliver local medication reminders at the times you set. All notifications are created and scheduled entirely on your device. No notification server is involved.</li>
-    <li><strong>Apple Health (iOS 26 and later)</strong> — if you choose to import medications from the Apple Health app, DailyMeds requests read-only access to your medications. Nothing is ever written back to Apple Health. This feature is entirely opt-in and requires your explicit permission via Apple's standard Health authorization prompt.</li>
-    <li><strong>App preferences</strong> — reminder and tracking settings are stored in your device's standard local preferences (UserDefaults). They are not synced, shared, or accessible to us.</li>
+    <li><strong>Camera</strong> — only if you use the label scanner. You open Scan, point it at your medication box, and the app reads the text off the packaging using Apple's Vision framework on your device. No photo is taken, no image leaves your phone. The camera is never used in the background.</li>
+    <li><strong>Notifications</strong> — so the app can remind you to take your medication. Every reminder is scheduled locally on your device using iOS's notification system. There's no server sending you push notifications.</li>
+    <li><strong>Apple Health (iOS 26+)</strong> — only if you tap "Import from Apple Health" in Settings. The app asks to read your medications from Health so you don't have to type them in manually. It reads and imports — nothing is ever written back. You can decline and the rest of the app works fine.</li>
+    <li><strong>Preferences storage</strong> — your settings (reminder behaviour, dose window, etc.) are saved using iOS's standard UserDefaults. They stay on your device and we can't read them.</li>
   </ul>
 </section>
 
 <section>
-  <h2>Data storage and security</h2>
-  <p>All app data is stored locally on your device and protected by iOS's built-in data protection, which encrypts data at rest using your device passcode. We do not operate any servers or databases that hold your information.</p>
-  <p>If you back up your iPhone to iCloud or a Mac or PC, DailyMeds data is included in that device backup under Apple's own encryption. We do not control or have access to iCloud backups.</p>
+  <h2>Your data, your device</h2>
+  <p>Because everything is stored locally, you're in complete control. There's no account to deactivate, no server-side record to request deletion of.</p>
+  <p>To wipe everything: open Settings inside the app and tap <strong>Delete All Data</strong>. It's immediate and can't be undone — so export a backup first if you might want it later. Deleting the app itself does the same thing.</p>
+  <p>You can export a backup of your medications and history from Settings any time. It's a file that goes through iOS's share sheet to wherever you send it. We never see it.</p>
 </section>
 
 <section>
-  <h2>Data sharing and third parties</h2>
-  <p>We do not share your data with anyone — because we never receive it in the first place. DailyMeds contains no third-party SDKs, analytics libraries, crash reporting tools, advertising networks, or tracking frameworks of any kind. The app uses only Apple's own system frameworks.</p>
+  <h2>Backups and iCloud</h2>
+  <p>If you back up your iPhone to iCloud or your Mac, DailyMeds data is included in that backup the same way any other app's data is — encrypted by Apple, managed by you. We have no access to it.</p>
 </section>
 
 <section>
-  <h2>Backups and data portability</h2>
-  <p>DailyMeds lets you export a full backup of your medications and history from Settings at any time. The backup file is generated on your device and shared only through iOS's standard share sheet — to wherever you choose to send it. We never receive a copy of this file.</p>
-  <p>You can restore a backup on the same device or a new one by importing the file in Settings.</p>
-</section>
-
-<section>
-  <h2>Your rights and data deletion</h2>
-  <p>Because we do not collect or hold any of your data, there is nothing for us to provide, correct, or delete on our end. Your data is entirely under your control at all times.</p>
-  <p>To delete your data from the app, open <strong>Settings</strong> inside DailyMeds and tap <strong>Delete All Data</strong>. This immediately removes all medications and history from your device and cannot be undone. Deleting the app achieves the same result.</p>
+  <h2>Third-party code</h2>
+  <p>There isn't any. No analytics SDK, no crash reporter phoning home, no advertising framework, no tracking library. The app uses Apple's frameworks and nothing else. This wasn't a budget decision — it's the design.</p>
 </section>
 
 <section>
   <h2>Advertising and tracking</h2>
-  <p>DailyMeds contains no advertising. We do not track you across other apps or websites. We do not build profiles, sell data, or use your information for any commercial purpose. The app does not request access to your Advertising Identifier (IDFA).</p>
+  <p>DailyMeds has no ads. It doesn't use your Advertising Identifier (IDFA). It doesn't track you across other apps. It has no idea what other apps you use.</p>
 </section>
 
 <section>
-  <h2>Children's privacy</h2>
-  <p>DailyMeds does not collect personal information from anyone, including children under the age of 13 (or the applicable age in your jurisdiction). Because no data is collected at all, the app does not require any special handling under children's privacy laws such as COPPA (United States) or equivalent regulations elsewhere.</p>
+  <h2>Children</h2>
+  <p>The app doesn't collect data from anyone — children or adults. There's nothing age-gated, nothing that requires an age check, and nothing we'd need to handle differently for someone under 13. COPPA and equivalent laws in other countries simply don't apply because the data collection threshold is zero.</p>
 </section>
 
 <section>
-  <h2>Medical disclaimer</h2>
-  <p>DailyMeds is a personal reminder and tracking tool, not a regulated medical device. It helps you keep track of medication that has already been prescribed to you by a healthcare professional. It does not provide medical advice, suggest diagnoses, check for drug interactions, or replace the guidance of a doctor or pharmacist. Always follow the instructions given by your healthcare provider.</p>
+  <h2>A note on medical use</h2>
+  <p>DailyMeds is a reminder app. It helps you keep track of medication your doctor already prescribed. It doesn't give advice, suggest diagnoses, or flag drug interactions. Please don't use it as a substitute for talking to your doctor or pharmacist — it's a tool for remembering, not for deciding.</p>
 </section>
 
 <section>
-  <h2>Changes to this policy</h2>
-  <p>If we make material changes to this policy, we will update the date at the top of this page. Because we have no way to contact you directly, we recommend bookmarking this page if you wish to be notified of future changes.</p>
+  <h2>If this policy changes</h2>
+  <p>We'll update the date at the top of this page. Since we have no way to reach you — no email, no account — checking back here is the only way to see changes. We'll only make changes if something genuinely changes about how the app works, not just to update legal boilerplate.</p>
 </section>
 
 <section>
-  <h2>Contact</h2>
+  <h2>Questions</h2>
   <div class="contact-box">
-    <p>Questions or concerns about your privacy?</p>
+    <p>If something here doesn't make sense or you want to know more, just ask.</p>
     <p style="margin-top:10px;"><a href="mailto:support@figoodle.com">support@figoodle.com</a></p>
   </div>
 </section>
