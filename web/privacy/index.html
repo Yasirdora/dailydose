@@ -24,72 +24,77 @@
 
 <section>
   <div class="highlight">
-    Short version: DailyMeds doesn't know anything about you. Your medications stay on your phone. That's the whole point.
+    The short version: DailyMeds doesn't know who you are. Your data never leaves your phone. That's not a feature — it's just how the app works.
   </div>
 </section>
 
 <section>
-  <h2>Who made this app</h2>
-  <p>DailyMeds is built by figoodle. It's a one-person indie app, not a company with a privacy team and a legal department. If you have a question, you're emailing a real person at <a href="mailto:support@figoodle.com" style="color:var(--accent);">support@figoodle.com</a>.</p>
+  <h2>Who we are</h2>
+  <p>DailyMeds is an indie app built by figoodle. It's not a startup with a growth team or an ad business on the side. If you email <a href="mailto:support@figoodle.com" style="color:var(--accent);">support@figoodle.com</a>, a real person reads it.</p>
 </section>
 
 <section>
-  <h2>What we collect</h2>
-  <p>Nothing. Genuinely.</p>
-  <p>There's no account, no sign-in, no server receiving your data. The medications you add, the doses you log, the schedules you set — all of it lives in SwiftData on your iPhone and goes nowhere. We don't see it, can't see it, and have no infrastructure to receive it even if we wanted to.</p>
+  <h2>Data we collect</h2>
+  <p>None. There's no account, no backend, no analytics. Every medication you add, every dose you log, every schedule you set — it all lives in a local database on your iPhone. We have no server that receives it and no way to access it.</p>
 </section>
 
 <section>
-  <h2>What the app asks permission for</h2>
+  <h2>Permissions</h2>
   <ul>
-    <li><strong>Camera</strong> — only if you use the label scanner. You open Scan, point it at your medication box, and the app reads the text off the packaging using Apple's Vision framework on your device. No photo is taken, no image leaves your phone. The camera is never used in the background.</li>
-    <li><strong>Notifications</strong> — so the app can remind you to take your medication. Every reminder is scheduled locally on your device using iOS's notification system. There's no server sending you push notifications.</li>
-    <li><strong>Apple Health (iOS 26+)</strong> — only if you tap "Import from Apple Health" in Settings. The app asks to read your medications from Health so you don't have to type them in manually. It reads and imports — nothing is ever written back. You can decline and the rest of the app works fine.</li>
-    <li><strong>Preferences storage</strong> — your settings (reminder behaviour, dose window, etc.) are saved using iOS's standard UserDefaults. They stay on your device and we can't read them.</li>
+    <li>
+      <strong>Camera.</strong> Only used in the Scan tab. You point it at a box, Apple's Vision framework reads the text on-device, the camera closes. No image is saved or sent anywhere. Never runs in the background.
+    </li>
+    <li>
+      <strong>Notifications.</strong> Used to remind you to take your medication at the times you set. All reminders are scheduled locally — there's no push notification server involved.
+    </li>
+    <li>
+      <strong>Apple Health</strong> (iOS 26 and later). If you tap "Import from Apple Health" in Settings, the app requests read-only access to import your medications. Nothing is ever written back to Health. Skip it and everything else works fine.
+    </li>
+    <li>
+      <strong>Preferences.</strong> Your settings are saved using iOS's standard local storage. We can't read them.
+    </li>
   </ul>
 </section>
 
 <section>
-  <h2>Your data, your device</h2>
-  <p>Because everything is stored locally, you're in complete control. There's no account to deactivate, no server-side record to request deletion of.</p>
-  <p>To wipe everything: open Settings inside the app and tap <strong>Delete All Data</strong>. It's immediate and can't be undone — so export a backup first if you might want it later. Deleting the app itself does the same thing.</p>
-  <p>You can export a backup of your medications and history from Settings any time. It's a file that goes through iOS's share sheet to wherever you send it. We never see it.</p>
-</section>
-
-<section>
-  <h2>Backups and iCloud</h2>
-  <p>If you back up your iPhone to iCloud or your Mac, DailyMeds data is included in that backup the same way any other app's data is — encrypted by Apple, managed by you. We have no access to it.</p>
+  <h2>Backups</h2>
+  <p>You can export your data from Settings any time as a backup file. That file goes through iOS's share sheet to wherever you send it — we never see a copy. If you back up your iPhone to iCloud or a Mac, DailyMeds data is included in that backup under Apple's own encryption.</p>
 </section>
 
 <section>
   <h2>Third-party code</h2>
-  <p>There isn't any. No analytics SDK, no crash reporter phoning home, no advertising framework, no tracking library. The app uses Apple's frameworks and nothing else. This wasn't a budget decision — it's the design.</p>
+  <p>None. No analytics SDK, no crash reporter, no ad framework. Just Apple's own frameworks. This was a deliberate choice, not a coincidence.</p>
 </section>
 
 <section>
   <h2>Advertising and tracking</h2>
-  <p>DailyMeds has no ads. It doesn't use your Advertising Identifier (IDFA). It doesn't track you across other apps. It has no idea what other apps you use.</p>
+  <p>DailyMeds has no ads and doesn't use your Advertising Identifier. It has no idea what other apps you use and makes no attempt to find out.</p>
+</section>
+
+<section>
+  <h2>Deleting your data</h2>
+  <p>Go to Settings inside the app and tap <strong>Delete All Data</strong>. It's instant and permanent. Alternatively, delete the app — same result. There's nothing on our end to delete because we never had any of it.</p>
 </section>
 
 <section>
   <h2>Children</h2>
-  <p>The app doesn't collect data from anyone — children or adults. There's nothing age-gated, nothing that requires an age check, and nothing we'd need to handle differently for someone under 13. COPPA and equivalent laws in other countries simply don't apply because the data collection threshold is zero.</p>
+  <p>DailyMeds doesn't collect data from anyone. There's nothing age-sensitive about an app that only stores data locally, so COPPA and similar laws don't create any obligations for us beyond what we already do.</p>
 </section>
 
 <section>
-  <h2>A note on medical use</h2>
-  <p>DailyMeds is a reminder app. It helps you keep track of medication your doctor already prescribed. It doesn't give advice, suggest diagnoses, or flag drug interactions. Please don't use it as a substitute for talking to your doctor or pharmacist — it's a tool for remembering, not for deciding.</p>
+  <h2>Medical disclaimer</h2>
+  <p>DailyMeds is a reminder app, not a medical device. It helps you remember to take medication your doctor already prescribed. It doesn't diagnose, advise, or flag interactions. If something seems wrong with your medication, talk to a pharmacist or your doctor — not an app.</p>
 </section>
 
 <section>
-  <h2>If this policy changes</h2>
-  <p>We'll update the date at the top of this page. Since we have no way to reach you — no email, no account — checking back here is the only way to see changes. We'll only make changes if something genuinely changes about how the app works, not just to update legal boilerplate.</p>
+  <h2>Changes</h2>
+  <p>We'll update the date at the top of this page if anything changes. We don't have a way to reach you directly, so this page is the only record. We won't change anything unless something about the app actually changes.</p>
 </section>
 
 <section>
   <h2>Questions</h2>
   <div class="contact-box">
-    <p>If something here doesn't make sense or you want to know more, just ask.</p>
+    <p>If you have questions about any of this, just ask.</p>
     <p style="margin-top:10px;"><a href="mailto:support@figoodle.com">support@figoodle.com</a></p>
   </div>
 </section>
