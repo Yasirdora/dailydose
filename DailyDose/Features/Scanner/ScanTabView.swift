@@ -78,7 +78,7 @@ struct ScanTabView: View {
         // Prime, don't pounce: the permission explanation must be read
         // *before* the system alert, not behind it. A cold prompt is the
         // single biggest cause of permanent camera denial, and denial here
-        // is one-way. The "Allow Camera" button in CameraUnavailableView
+        // is one-way. The "Continue" button in CameraUnavailableView
         // makes the request.
         .task { authorization.refresh() }
         // The sheet disables drag-to-dismiss, so a user who fixes permission
@@ -423,7 +423,7 @@ struct LabelScannerSheet: View {
             .toast($toast)
         }
         // Prime, don't pounce: the permission explanation must be read *before*
-        // the system alert. The "Allow Camera" button inside the card makes the
+        // the system alert. The "Continue" button inside the card makes the
         // request.
         .task { authorization.refresh() }
         .onChange(of: scenePhase) { _, phase in

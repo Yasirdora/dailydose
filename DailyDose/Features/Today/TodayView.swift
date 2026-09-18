@@ -494,7 +494,7 @@ private struct NotificationNudge: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Button(action: onEnable) {
-                Text(String(localized: "Turn On Notifications"))
+                Text(String(localized: "Continue"))
                     .font(.headline)
                     .frame(maxWidth: .infinity)
             }

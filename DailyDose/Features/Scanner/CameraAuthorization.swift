@@ -83,7 +83,7 @@ struct CameraUnavailableView: View {
                 .prominentButton()
             case .undetermined:
                 if let onRequest {
-                    Button(String(localized: "Allow Camera"), action: onRequest)
+                    Button(String(localized: "Continue"), action: onRequest)
                         .prominentButton()
                 }
             default:

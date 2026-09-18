@@ -70,7 +70,7 @@ struct NotificationSettingsView: View {
             } label: {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(String(localized: "Allow notifications"))
+                        Text(String(localized: "Continue"))
                             .font(.body.weight(.semibold))
                             .foregroundStyle(.primary)
                         Text(String(localized: "Without permission, none of the reminders below can reach you."))

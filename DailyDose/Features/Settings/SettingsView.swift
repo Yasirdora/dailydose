@@ -208,11 +208,20 @@ struct SettingsView: View {
             }
 
             if notificationStatus == .notDetermined {
-                Button(String(localized: "Turn on notifications")) {
+                Button {
                     Task {
                         await environment.notificationService.requestAuthorization()
                         notificationStatus = await environment.notificationService.authorizationStatus()
                         await store?.rescheduleNotifications()
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(String(localized: "Continue"))
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text(String(localized: "Reminders can't reach you until notifications are set up."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
