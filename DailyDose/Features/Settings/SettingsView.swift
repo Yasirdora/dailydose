@@ -323,7 +323,7 @@ struct SettingsView: View {
             NavigationLink {
                 AboutView()
             } label: {
-                Label(String(localized: "About Daily Dose"), systemImage: "info.circle")
+                Label(String(localized: "About Daily Meds"), systemImage: "info.circle")
             }
 
             Link(destination: URL(string: "https://dailymeds.figoodle.com/privacy/")!) {
@@ -356,7 +356,7 @@ struct SettingsView: View {
         } header: {
             Text(String(localized: "About"))
         } footer: {
-            Text(String(localized: "Daily Dose is not a medical device and does not give medical advice — always follow your prescriber's instructions."))
+            Text(String(localized: "Daily Meds is not a medical device and does not give medical advice — always follow your prescriber's instructions."))
         }
     }
 

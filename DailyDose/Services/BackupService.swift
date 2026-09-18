@@ -25,7 +25,7 @@ enum BackupService {
     // MARK: - Wire format
 
     struct Archive: Codable, Equatable {
-        var app = "Daily Dose"
+        var app = "Daily Meds"
         var version = BackupService.currentVersion
         var exportedAt: Date
         var medications: [MedicationRecord]
@@ -306,9 +306,9 @@ enum BackupError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .newerVersion(let version):
-            String(localized: "This backup was made by a newer version of Daily Dose (format \(version)). Update the app and try again.")
+            String(localized: "This backup was made by a newer version of Daily Meds (format \(version)). Update the app and try again.")
         case .unreadable:
-            String(localized: "That file isn't a Daily Dose backup.")
+            String(localized: "That file isn't a Daily Meds backup.")
         }
     }
 }

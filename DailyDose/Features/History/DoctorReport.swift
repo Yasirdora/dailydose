@@ -111,7 +111,7 @@ enum DoctorReport {
         let format = UIGraphicsPDFRendererFormat()
         format.documentInfo = [
             kCGPDFContextTitle as String: String(localized: "Medication Adherence Report"),
-            kCGPDFContextAuthor as String: "Daily Dose",
+            kCGPDFContextAuthor as String: "Daily Meds",
         ]
 
         try UIGraphicsPDFRenderer(bounds: pageRect, format: format).writePDF(to: url) { context in
@@ -187,7 +187,7 @@ private struct OverviewPage: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
-                Text("Daily Dose")
+                Text("Daily Meds")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color(red: 0.0, green: 0.68, blue: 0.78))
                 Text(String(localized: "Generated \(data.generatedAt.formatted(.dateTime.day().month(.abbreviated).year()))"))
@@ -476,7 +476,7 @@ private struct ReportFooter: View {
                 // from, and what the page is not. An A4 sheet titled
                 // "Medication Adherence Report" reads as a clinical instrument;
                 // it is a personal record and says so.
-                Text(String(localized: "Recorded by the patient in Daily Dose — a personal record, not a medical document. Times are as logged, including early and late doses."))
+                Text(String(localized: "Recorded by the patient in Daily Meds — a personal record, not a medical document. Times are as logged, including early and late doses."))
                     .font(.system(size: 9))
                     .foregroundStyle(Color.gray)
                 Spacer()

@@ -699,7 +699,7 @@ struct MedicationEditor: View {
             return Text(String(localized: "Read from the pack — check it before saving."))
                 .foregroundStyle(.secondary)
         }
-        return Text(String(localized: "Optional. Daily Dose counts down as you log doses and warns you before you run out."))
+        return Text(String(localized: "Optional. Daily Meds counts down as you log doses and warns you before you run out."))
             .foregroundStyle(.secondary)
     }
 

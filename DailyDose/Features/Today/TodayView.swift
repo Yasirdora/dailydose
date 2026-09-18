@@ -517,7 +517,7 @@ private struct NotificationDeniedCard: View {
         VStack(alignment: .leading, spacing: 10) {
             Label(String(localized: "Reminders are off"), systemImage: "bell.slash.fill")
                 .font(.headline)
-            Text(String(localized: "Notifications for Daily Dose are disabled in iOS Settings, so no dose reminder can reach you."))
+            Text(String(localized: "Notifications for Daily Meds are disabled in iOS Settings, so no dose reminder can reach you."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Button(action: onOpenSettings) {

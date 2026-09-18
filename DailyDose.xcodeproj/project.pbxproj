@@ -336,10 +336,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Config/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Daily Dose";
+				INFOPLIST_KEY_CFBundleDisplayName = "Daily Meds";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Point the camera at a pill bottle or box to read the medication name and strength — the image is analyzed on this device and never saved or shared.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Daily Dose reads your medication list from the Health app so you can import it with one tap — nothing is ever written back or shared.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Daily Meds reads your medication list from the Health app so you can import it with one tap — nothing is ever written back or shared.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -377,10 +377,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Config/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Daily Dose";
+				INFOPLIST_KEY_CFBundleDisplayName = "Daily Meds";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Point the camera at a pill bottle or box to read the medication name and strength — the image is analyzed on this device and never saved or shared.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Daily Dose reads your medication list from the Health app so you can import it with one tap — nothing is ever written back or shared.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Daily Meds reads your medication list from the Health app so you can import it with one tap — nothing is ever written back or shared.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";

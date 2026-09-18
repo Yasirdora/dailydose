@@ -19,7 +19,7 @@ struct AboutView: View {
                     Text(String(localized: "Medication reminders are healthcare, not a subscription."))
                         .font(.title3.weight(.bold))
 
-                    Text(String(localized: "Daily Dose is free and unlimited. There is no account, no server and no tracking — your medications and your history stay on this device and nowhere else."))
+                    Text(String(localized: "Daily Meds is free and unlimited. There is no account, no server and no tracking — your medications and your history stay on this device and nowhere else."))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -56,7 +56,7 @@ struct AboutView: View {
                         .font(.headline)
                         .foregroundStyle(Theme.due)
                     Text(String(localized: """
-                        Daily Dose helps you keep track of medication you have already \
+                        Daily Meds helps you keep track of medication you have already \
                         been prescribed. It does not give medical advice, does not check \
                         for drug interactions, and is not a substitute for your doctor or \
                         pharmacist. Always follow the instructions you were given.
@@ -70,7 +70,7 @@ struct AboutView: View {
                 Text(String(localized: "Important"))
             }
         }
-        .navigationTitle(String(localized: "About Daily Dose"))
+        .navigationTitle(String(localized: "About Daily Meds"))
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -139,7 +139,7 @@ enum FeedbackMail {
     static let address = "support@figoodle.com"
 
     static var url: URL? {
-        let subject = "Daily Dose feedback"
+        let subject = "Daily Meds feedback"
         let body = """
 
 

@@ -120,7 +120,7 @@ struct RecoveryView: View {
                 Label(String(localized: "Your data couldn't be opened"), systemImage: "exclamationmark.triangle.fill")
             } description: {
                 Text(String(localized: """
-                    Daily Dose is running, but it can't reach your saved medications. \
+                    Daily Meds is running, but it can't reach your saved medications. \
                     Your file has not been changed — reinstalling or updating the app may recover it.
                     """))
             } actions: {

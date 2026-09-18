@@ -287,7 +287,7 @@ struct ImportanceGuideView: View {
                 // mute switch, and a general medication reminder does not
                 // qualify for that entitlement — so the app does not pretend it
                 // can shout through a silenced phone.
-                Text(String(localized: "Standard and Important reminders break through Focus modes, but all of them respect your phone's silent switch. Daily Dose can't override it."))
+                Text(String(localized: "Standard and Important reminders break through Focus modes, but all of them respect your phone's silent switch. Daily Meds can't override it."))
             }
         }
         .navigationTitle(String(localized: "Importance"))

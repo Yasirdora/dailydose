@@ -34,7 +34,7 @@ struct AuroraBloom: View {
     /// ~0.1s is fully transparent, so the lift-away is never seen.
     static let lifespan: TimeInterval = 4.3
 
-    /// Hue (0…1) the journey opens and closes on. Daily Dose uses 0.52 (cyan).
+    /// Hue (0…1) the journey opens and closes on. Daily Meds uses 0.52 (cyan).
     var anchorHue: Double = 0.52
     /// Seconds for one full turn of the spectrum wheel. Slightly shorter
     /// than the visible life, so the anchor hue returns before the end.

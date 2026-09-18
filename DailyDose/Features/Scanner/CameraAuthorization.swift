@@ -108,13 +108,13 @@ struct CameraUnavailableView: View {
     private var message: String {
         switch state {
         case .denied:
-            String(localized: "Daily Dose reads medication labels using the camera. Turn it on in Settings, or type the details instead.")
+            String(localized: "Daily Meds reads medication labels using the camera. Turn it on in Settings, or type the details instead.")
         case .restricted:
             String(localized: "Camera access is restricted on this device. You can still type medication details by hand.")
         case .unavailable:
             String(localized: "This device can't scan labels. Type the medication details instead — it takes about the same time.")
         default:
-            String(localized: "Daily Dose reads the name and strength from the label. Nothing is saved or sent anywhere.")
+            String(localized: "Daily Meds reads the name and strength from the label. Nothing is saved or sent anywhere.")
         }
     }
 }
